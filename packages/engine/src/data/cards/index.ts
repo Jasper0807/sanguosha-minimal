@@ -2,10 +2,12 @@ import type { CardInstance, CardPack, DeckVariant } from '../../core/types.js';
 import { CARD_SPECS } from './specs.js';
 import { STANDARD_CARDS, type RawCardEntry } from './standard.js';
 import { EX_CARDS } from './ex.js';
+import { JUNZHENG_CARDS, LIMIT_BREAK_CARDS } from './junzheng.js';
 
 export { CARD_SPECS } from './specs.js';
 export { STANDARD_CARDS } from './standard.js';
 export { EX_CARDS } from './ex.js';
+export { JUNZHENG_CARDS, LIMIT_BREAK_CARDS } from './junzheng.js';
 
 function instantiatePack(
   entries: readonly RawCardEntry[],
@@ -22,13 +24,11 @@ function instantiatePack(
 }
 
 /**
- * Builds an unshuffled deck for the requested variant.
- * Phase 1 provides 'standard_ex' (108 cards). Phase 2 adds 'junzheng_161' (161 cards).
+ * Builds an unshuffled deck for the requested variant:
+ * - 'standard_ex': Standard 104 + EX 4 = 108 cards
+ * - 'junzheng_161': Standard 104 + EX 4 + Junzheng 52 + Limit Break (Wooden Ox) 1 = 161 cards
  */
-export function buildDeck(
-  variant: DeckVariant,
-  extraEntries: { entries: readonly RawCardEntry[]; pack: CardPack }[] = []
-): CardInstance[] {
+export function buildDeck(variant: DeckVariant): CardInstance[] {
   const cards: CardInstance[] = [];
   let nextId = 1;
 
@@ -40,14 +40,16 @@ export function buildDeck(
   cards.push(...ex);
   nextId += ex.length;
 
-  for (const extra of extraEntries) {
-    const built = instantiatePack(extra.entries, extra.pack, nextId);
-    cards.push(...built);
-    nextId += built.length;
+  if (variant === 'junzheng_161') {
+    const jz = instantiatePack(JUNZHENG_CARDS, 'junzheng', nextId);
+    cards.push(...jz);
+    nextId += jz.length;
+
+    const lb = instantiatePack(LIMIT_BREAK_CARDS, 'limit_break', nextId);
+    cards.push(...lb);
+    nextId += lb.length;
   }
 
-  // Note: variant === 'junzheng_161' will be populated automatically once Phase 2 junzheng.ts is wired
-  void variant;
   return cards;
 }
 

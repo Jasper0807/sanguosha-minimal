@@ -11,7 +11,10 @@ export default function App() {
   return (
     <>
       {screen === 'lobby' && (
-        <LobbyView availableModes={['1v1']} availableDecks={['standard_ex']} />
+        <LobbyView
+          availableModes={['1v1']}
+          availableDecks={['standard_ex', 'junzheng_161']}
+        />
       )}
       {screen === 'table' && <GameTableView />}
       {screen === 'summary' && <SummaryView />}

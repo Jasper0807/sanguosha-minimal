@@ -1587,6 +1587,27 @@ export class GameEngine {
       this.moveToDiscard(removed);
       this.log('respond', `${responder.name} 打出了 ${formatCard(removed)}`, responder.id, undefined, [removed.id]);
       yield* this.fireTrigger('CardResponded', { playerId: responder.id, card: removed });
+      if (
+        reason === 'slash_collateral' &&
+        removed.name === 'slash' &&
+        responder.equips.weapon?.name === 'fan'
+      ) {
+        const opt = yield* this.ask({
+          type: 'choose_option',
+          promptId: this.nextPromptId(),
+          playerId: responder.id,
+          reason: 'fan',
+          message: '是否发动【朱雀羽扇】，将此普通【杀】转为【火杀】使用？',
+          options: [
+            { id: 'yes', label: '转为【火杀】' },
+            { id: 'no', label: '保持普通【杀】' }
+          ]
+        });
+        if (opt.type === 'choose_option' && opt.optionId === 'yes') {
+          this.log('equip', `${responder.name} 发动【朱雀羽扇】，将【杀】转化为【火杀】！`, responder.id);
+          return toVirtualCard(removed, 'fire_slash', 'fire');
+        }
+      }
       return toVirtualCard(removed);
     }
 
