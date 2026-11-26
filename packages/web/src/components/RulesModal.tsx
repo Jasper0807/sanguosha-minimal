@@ -52,16 +52,30 @@ export function RulesModal({ open, onClose }: RulesModalProps) {
           </section>
 
           <section>
-            <h4 className="font-bold text-stone-900 dark:text-stone-100">3. 军争与连环传导</h4>
+            <h4 className="font-bold text-stone-900 dark:text-stone-100">3. 牌堆与 89 位 OL 武将</h4>
+            <p className="mt-1">
+              完整内置 <strong>161 张军争牌堆</strong>（标准 104 + EX 4 + 军争 52 + ♦5 木牛流马）与 <strong>89 位三国杀 OL 武将</strong>：标准包 27 位、界限突破·标准包 30 位、神话再临·风林火山 32 位。混池选将自动互斥同名武将。
+            </p>
+          </section>
+
+          <section>
+            <h4 className="font-bold text-stone-900 dark:text-stone-100">4. 军争与连环传导</h4>
             <p className="mt-1">
               处于连环状态的角色受到属性伤害（火/雷）扣血后解除连环，并从当前回合角色起逆时针依次传导同来源、同属性、同实际扣血量的传导伤害；即使首个受伤害者阵亡，只要对局未分胜负仍继续传导，一旦分出胜负立即中止。
             </p>
           </section>
 
           <section>
-            <h4 className="font-bold text-stone-900 dark:text-stone-100">4. 快捷键说明</h4>
+            <h4 className="font-bold text-stone-900 dark:text-stone-100">5. 线上好友房间链接 PvP</h4>
+            <p className="mt-1">
+              在大厅点击「创建线上房间」生成 6 位房间码与一键邀请链接，好友打开即可直达入座；支持房主自由配置 AI 补位、实时倒计时与断线自动重连，服务端按视角严格裁剪隐藏手牌与暗置身份。
+            </p>
+          </section>
+
+          <section>
+            <h4 className="font-bold text-stone-900 dark:text-stone-100">6. 快捷键说明</h4>
             <div className="mt-1 grid grid-cols-2 gap-2 text-xs font-mono bg-stone-50 dark:bg-stone-800/70 p-3 rounded-lg">
-              <div>1 ~ 9：快速选中对应手牌</div>
+              <div>1 ~ 9：快速选中手牌 / 技能选项</div>
               <div>双击手牌：直接使用无需目标的牌</div>
               <div>Enter：确认出牌 / 响应</div>
               <div>Esc：取消选中 / 放弃可选响应</div>

@@ -169,7 +169,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   theme: 'light',
   mode: '1v1',
   deckVariant: 'junzheng_161',
-  generalPack: 'standard',
+  generalPack: 'all',
   seed: Math.floor(Date.now() % 1000000),
   seats: buildDefaultSeats('1v1'),
   hostSettings: {

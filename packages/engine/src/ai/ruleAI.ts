@@ -235,6 +235,17 @@ function pickBestEnemy(
 }
 
 /**
+ * Pure stateless deterministic hash for AI variety — NEVER mutates `engine.rng`,
+ * preserving 100% bit-exact `GameEngine.replay()` determinism!
+ */
+function aiHash(seed: number, salt: number): number {
+  let h = (seed ^ Math.imul(salt + 1, 2654435761)) >>> 0;
+  h = Math.imul(h ^ (h >>> 16), 2246822507) >>> 0;
+  h = Math.imul(h ^ (h >>> 13), 3266489909) >>> 0;
+  return (h ^ (h >>> 16)) >>> 0;
+}
+
+/**
  * Decides a valid, intelligent PlayerResponse for an AI player given the current engine state.
  */
 export function decideAIAction(engine: GameEngine, playerId: string): PlayerResponse {
@@ -247,11 +258,16 @@ export function decideAIAction(engine: GameEngine, playerId: string): PlayerResp
 
   switch (prompt.type) {
     case 'choose_general': {
-      // Pick highest maxHp / skill count candidate deterministically
-      const sorted = [...prompt.candidates].sort(
-        (a, b) => b.maxHp + b.skills.length * 0.5 - (a.maxHp + a.skills.length * 0.5)
-      );
-      return { type: 'choose_general', generalId: sorted[0].id };
+      // Score by HP + skill count + gentle pure-hash variety so 3-HP technical generals also get played
+      const scored = prompt.candidates.map((g, idx) => ({
+        g,
+        score:
+          g.maxHp +
+          g.skills.length * 0.4 +
+          (aiHash(state.config.seed, state.nextPromptId * 31 + idx * 17 + ai.seat) % 25) * 0.1
+      }));
+      scored.sort((a, b) => b.score - a.score);
+      return { type: 'choose_general', generalId: scored[0].g.id };
     }
 
     case 'choose_guanxing': {
@@ -403,7 +419,8 @@ export function decideAIAction(engine: GameEngine, playerId: string): PlayerResp
           if (ai.hp <= 1) return { type: 'choose_option', optionId: 'trust' };
           const yuji = state.players.find((p) => p.alive && prompt.message.includes(p.name));
           const hostile = yuji ? evaluateRelation(state, ai, yuji) < 0 : false;
-          const shouldDoubt = hostile && ai.hp >= 3 && engine.rng.nextInt(100) < 35;
+          const roll = aiHash(state.config.seed, state.nextPromptId * 13 + ai.seat) % 100;
+          const shouldDoubt = hostile && ai.hp >= 3 && roll < 35;
           return { type: 'choose_option', optionId: shouldDoubt ? 'doubt' : 'trust' };
         }
         case 'jieming': {
@@ -606,9 +623,10 @@ export function decideAIAction(engine: GameEngine, playerId: string): PlayerResp
           };
         case 'fanjian_suit': {
           const suits = ['spade', 'heart', 'club', 'diamond'];
+          const pickIdx = aiHash(state.config.seed, state.nextPromptId * 19 + ai.seat) % suits.length;
           return {
             type: 'choose_option',
-            optionId: suits[engine.rng.nextInt(suits.length)]
+            optionId: suits[pickIdx]
           };
         }
         case 'double_swords_choice':

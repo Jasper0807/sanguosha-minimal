@@ -9,6 +9,7 @@
     "server:start": "pnpm --filter @sgs/server start",
     "build": "pnpm --filter @sgs/engine build && pnpm --filter @sgs/web build && pnpm --filter @sgs/server build",
     "test": "pnpm --filter @sgs/engine test && pnpm --filter @sgs/server test",
+    "stress:500": "pnpm --filter @sgs/engine exec vitest run tests/phase6.stress.test.ts",
     "test:coverage": "pnpm --filter @sgs/engine test:coverage",
     "typecheck": "pnpm -r typecheck"
   },

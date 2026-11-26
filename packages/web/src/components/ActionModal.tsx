@@ -301,69 +301,220 @@ export function ActionModal({
 
   if (prompt.type === 'choose_general') {
     return (
-      <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-[1px] flex items-center justify-center p-4">
-        <div className="max-w-4xl w-full rounded-xl bg-white dark:bg-[#1F232B] border border-stone-300 dark:border-stone-700 shadow-2xl p-5">
-          <h3 className="text-lg font-bold">{prompt.message}</h3>
-          <p className="text-xs text-stone-500 mt-1">
-            从以下候选武将中选择一位出战（悬停技能标签可查看完整三国杀 OL 规则描述）
-          </p>
-          <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 max-h-[65vh] overflow-y-auto pr-1">
-            {prompt.candidates.map((g) => {
-              const fm = FACTION_META[g.faction];
-              return (
-                <button
-                  key={g.id}
-                  type="button"
-                  onClick={() => onChooseGeneral(g.id)}
-                  className="text-left rounded-xl border border-stone-300 dark:border-stone-600 bg-stone-50 dark:bg-stone-900 hover:border-stone-900 dark:hover:border-amber-400 hover:shadow-md transition-all overflow-hidden flex flex-col"
-                >
-                  <div className={`h-1.5 w-full ${fm.bar}`} />
-                  <div className="p-3 flex flex-col gap-1 flex-1">
-                    <div className="flex items-center justify-between">
-                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${fm.badge}`}>
-                        {fm.label}
-                      </span>
-                      <span className="font-mono text-xs text-stone-500">
-                        {g.maxHp} 血 · {g.gender === 'male' ? '男' : '女'}
-                      </span>
-                    </div>
-                    <div className="font-serif font-bold text-base mt-0.5">{g.name}</div>
-                    <div className="text-[11px] text-stone-500">{g.title}</div>
-                    {g.skills.length === 0 ? (
-                      <div className="text-[11px] text-stone-400 mt-1">无技能（标准测试将）</div>
-                    ) : (
-                      <div className="mt-1.5 flex flex-col gap-1">
-                        {g.skills.map((s) => (
-                          <div
-                            key={s.id}
-                            title={`${s.name}：${s.description}`}
-                            className="text-[10px] leading-snug text-stone-600 dark:text-stone-300"
-                          >
-                            <span
-                              className={[
-                                'inline-block px-1 py-0.2 rounded font-bold mr-1',
-                                s.type === 'lord'
-                                  ? 'bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-100'
-                                  : 'bg-stone-200 dark:bg-stone-800 text-stone-800 dark:text-stone-100'
-                              ].join(' ')}
-                            >
-                              {s.name}
-                              {s.type === 'lord' ? '·主' : ''}
-                            </span>
-                            <span className="line-clamp-2 opacity-80">{s.description}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </div>
+      <GeneralPickerModal
+        promptId={prompt.promptId}
+        message={prompt.message}
+        candidates={prompt.candidates}
+        onChooseGeneral={onChooseGeneral}
+      />
     );
   }
 
   return null;
+}
+
+function GeneralPickerModal({
+  promptId,
+  message,
+  candidates,
+  onChooseGeneral
+}: {
+  promptId: string;
+  message: string;
+  candidates: Extract<PromptRequest, { type: 'choose_general' }>['candidates'];
+  onChooseGeneral: (generalId: string) => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [factionFilter, setFactionFilter] = useState<'all' | 'wei' | 'shu' | 'wu' | 'qun'>('all');
+  const [packFilter, setPackFilter] = useState<'all' | 'standard' | 'limit_break' | 'expansion'>('all');
+
+  useEffect(() => {
+    setQuery('');
+    setFactionFilter('all');
+    setPackFilter('all');
+  }, [promptId]);
+
+  const showFilters = candidates.length > 8;
+  const q = query.trim().toLowerCase();
+  const filtered = candidates.filter((g) => {
+    if (factionFilter !== 'all' && g.faction !== factionFilter) return false;
+    if (packFilter === 'standard' && g.pack !== 'standard') return false;
+    if (packFilter === 'limit_break' && g.pack !== 'limit_break') return false;
+    if (
+      packFilter === 'expansion' &&
+      g.pack !== 'feng' &&
+      g.pack !== 'huo' &&
+      g.pack !== 'lin' &&
+      g.pack !== 'shan'
+    ) {
+      return false;
+    }
+    if (q) {
+      const hay = [
+        g.name,
+        g.title,
+        ...g.skills.map((s) => `${s.name} ${s.description}`)
+      ]
+        .join(' ')
+        .toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  const packBadgeLabel = (pack: string): string => {
+    if (pack === 'standard') return '标';
+    if (pack === 'limit_break') return '界';
+    if (pack === 'feng') return '风';
+    if (pack === 'huo') return '火';
+    if (pack === 'lin') return '林';
+    if (pack === 'shan') return '山';
+    return '';
+  };
+
+  return (
+    <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-[1px] flex items-center justify-center p-4">
+      <div className="max-w-4xl w-full rounded-xl bg-white dark:bg-[#1F232B] border border-stone-300 dark:border-stone-700 shadow-2xl p-5 flex flex-col max-h-[88vh]">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className="text-lg font-bold">{message}</h3>
+            <p className="text-xs text-stone-500 mt-0.5">
+              从候选武将中选择一位出战（共 {filtered.length}/{candidates.length} 位 · 悬停技能查看 OL 原文）
+            </p>
+          </div>
+          {showFilters && (
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="搜索武将 / 技能名..."
+              className="px-3 py-1.5 rounded-lg text-xs border border-stone-300 dark:border-stone-600 bg-stone-50 dark:bg-stone-900 outline-none focus:ring-2 focus:ring-amber-500/60 w-48"
+            />
+          )}
+        </div>
+
+        {showFilters && (
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
+            <div className="flex items-center gap-1">
+              {(
+                [
+                  ['all', '全势力'],
+                  ['wei', '魏'],
+                  ['shu', '蜀'],
+                  ['wu', '吴'],
+                  ['qun', '群']
+                ] as const
+              ).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setFactionFilter(key)}
+                  className={[
+                    'px-2 py-1 rounded font-semibold border transition-colors',
+                    factionFilter === key
+                      ? 'bg-stone-900 text-white border-stone-900 dark:bg-amber-600 dark:border-amber-600'
+                      : 'bg-stone-50 dark:bg-stone-800 text-stone-600 dark:text-stone-300 border-stone-200 dark:border-stone-700 hover:bg-stone-100'
+                  ].join(' ')}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <span className="text-stone-300 dark:text-stone-700">|</span>
+            <div className="flex items-center gap-1">
+              {(
+                [
+                  ['all', '全扩展包'],
+                  ['standard', '标准 27'],
+                  ['limit_break', '界限 30'],
+                  ['expansion', '风林火山 32']
+                ] as const
+              ).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setPackFilter(key)}
+                  className={[
+                    'px-2 py-1 rounded font-semibold border transition-colors',
+                    packFilter === key
+                      ? 'bg-[#8B2626] text-white border-[#8B2626]'
+                      : 'bg-stone-50 dark:bg-stone-800 text-stone-600 dark:text-stone-300 border-stone-200 dark:border-stone-700 hover:bg-stone-100'
+                  ].join(' ')}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 overflow-y-auto pr-1 flex-1">
+          {filtered.map((g) => {
+            const fm = FACTION_META[g.faction];
+            const pb = packBadgeLabel(g.pack);
+            return (
+              <button
+                key={g.id}
+                type="button"
+                onClick={() => onChooseGeneral(g.id)}
+                className="text-left rounded-xl border border-stone-300 dark:border-stone-600 bg-stone-50 dark:bg-stone-900 hover:border-stone-900 dark:hover:border-amber-400 hover:shadow-md transition-all overflow-hidden flex flex-col"
+              >
+                <div className={`h-1.5 w-full ${fm.bar}`} />
+                <div className="p-3 flex flex-col gap-1 flex-1">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1">
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${fm.badge}`}>
+                        {fm.label}
+                      </span>
+                      {pb && (
+                        <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-stone-200 dark:bg-stone-800 text-stone-600 dark:text-stone-300">
+                          {pb}
+                        </span>
+                      )}
+                    </div>
+                    <span className="font-mono text-xs text-stone-500">
+                      {g.maxHp} 血 · {g.gender === 'male' ? '男' : '女'}
+                    </span>
+                  </div>
+                  <div className="font-serif font-bold text-base mt-0.5">{g.name}</div>
+                  <div className="text-[11px] text-stone-500">{g.title}</div>
+                  {g.skills.length === 0 ? (
+                    <div className="text-[11px] text-stone-400 mt-1">无技能（标准测试将）</div>
+                  ) : (
+                    <div className="mt-1.5 flex flex-col gap-1">
+                      {g.skills.map((s) => (
+                        <div
+                          key={s.id}
+                          title={`${s.name}：${s.description}`}
+                          className="text-[10px] leading-snug text-stone-600 dark:text-stone-300"
+                        >
+                          <span
+                            className={[
+                              'inline-block px-1 py-0.2 rounded font-bold mr-1',
+                              s.type === 'lord'
+                                ? 'bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-100'
+                                : 'bg-stone-200 dark:bg-stone-800 text-stone-800 dark:text-stone-100'
+                            ].join(' ')}
+                          >
+                            {s.name}
+                            {s.type === 'lord' ? '·主' : ''}
+                          </span>
+                          <span className="line-clamp-2 opacity-80">{s.description}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </button>
+            );
+          })}
+          {filtered.length === 0 && (
+            <div className="col-span-full py-8 text-center text-xs text-stone-400">
+              未找到匹配的武将，请调整筛选条件
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
