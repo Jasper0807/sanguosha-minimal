@@ -114,7 +114,20 @@ export type GeneralPack =
   | 'lin'
   | 'shan';
 
-export type GeneralPackSelection = 'standard' | 'limit_break' | 'all' | 'blank';
+export type GeneralPackSelection =
+  | 'standard'
+  | 'limit_break'
+  | 'expansion'
+  | 'all'
+  | 'blank';
+
+export interface PindianResult {
+  initiatorId: string;
+  targetId: string;
+  initiatorCard: CardInstance;
+  targetCard: CardInstance;
+  winner: 'initiator' | 'target' | 'tie';
+}
 
 export interface SkillMeta {
   id: string;
@@ -210,8 +223,14 @@ export interface PlayerState {
   nonCompulsoryDisabledThisTurn?: boolean;
   /** Cannot use or play hand cards until current turn ends (LB Guan Yu Yijue black card) */
   cannotPlayHandCardsThisTurn?: boolean;
+  /** Cannot use Slash for the rest of this turn (Taishi Ci Tianyi lose) */
+  cannotUseSlashThisTurn?: boolean;
   /** Grants an extra turn after current turn finishes (LB Lu Meng Botu) */
   extraTurnPending?: boolean;
+  /** Zuo Ci Huashen pool of unused general IDs */
+  huashenPool?: string[];
+  activeHuashenGeneralId?: string;
+  activeHuashenSkillId?: string;
   marks: Record<string, number>;
   stats: PlayerStats;
 }
@@ -313,6 +332,7 @@ export interface ChooseCardPrompt {
     | 'fire_attack_discard'
     | 'serpent_spear'
     | 'wooden_ox_stash'
+    | 'pindian'
     | 'general_skill';
   message: string;
   minCount: number;
@@ -363,7 +383,7 @@ export interface ChoosePlayerCardPrompt {
   promptId: string;
   playerId: string;
   targetId: string;
-  reason: 'dismantle' | 'snatch' | 'ice_sword' | 'kylin_bow';
+  reason: 'dismantle' | 'snatch' | 'ice_sword' | 'kylin_bow' | 'move_field_card';
   message: string;
   choices: PlayerCardChoice[];
 }
@@ -508,6 +528,8 @@ export interface GameState {
   turnSuitsDiscarded: Suit[];
   /** Damage dealt by each player during the current turn (LB Xu Shu Zhuhai) */
   turnDamageDealtByPlayer: Record<string, number>;
+  /** Queued playerIds for extra turns after current turn ends (Liu Shan Fangquan / LB Lu Meng Botu) */
+  extraTurnQueue: string[];
   /** Event-sourced response log for deterministic replay */
   actionLog: RecordedAction[];
 }
@@ -541,6 +563,9 @@ export interface PublicPlayerView {
   woodenOxUsedThisTurn: boolean;
   skills: string[];
   skillDetails: SkillMeta[];
+  removedCardCounts?: Record<string, number>;
+  huashenCount?: number;
+  activeHuashenGeneralName?: string;
   marks: Record<string, number>;
   stats: PlayerStats;
 }

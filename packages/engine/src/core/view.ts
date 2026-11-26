@@ -1,5 +1,5 @@
 import type { ClientView, GameState, PlayerState, PublicPlayerView, SkillMeta } from './types.js';
-import { getSkillMetaById } from '../data/generals/index.js';
+import { getGeneralById, getSkillMetaById } from '../data/generals/index.js';
 
 export interface ViewOptions {
   revealAllHands?: boolean;
@@ -56,6 +56,13 @@ export function buildClientView(
     const skillDetails: SkillMeta[] = p.skills
       .map((sid) => getSkillMetaById(sid))
       .filter((s): s is SkillMeta => Boolean(s));
+    const removedCardCounts: Record<string, number> = {};
+    for (const [pileKey, cards] of Object.entries(p.removedCards)) {
+      if (cards.length > 0) removedCardCounts[pileKey] = cards.length;
+    }
+    const activeHuashenGeneralName = p.activeHuashenGeneralId
+      ? getGeneralById(p.activeHuashenGeneralId).name
+      : undefined;
     return {
       id: p.id,
       seat: p.seat,
@@ -85,6 +92,9 @@ export function buildClientView(
       woodenOxUsedThisTurn: p.woodenOxUsedThisTurn,
       skills: [...p.skills],
       skillDetails,
+      removedCardCounts: Object.keys(removedCardCounts).length > 0 ? removedCardCounts : undefined,
+      huashenCount: p.huashenPool?.length ? p.huashenPool.length : undefined,
+      activeHuashenGeneralName,
       marks: { ...p.marks },
       stats: { ...p.stats }
     };

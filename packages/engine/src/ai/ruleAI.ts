@@ -334,7 +334,156 @@ export function decideAIAction(engine: GameEngine, playerId: string): PlayerResp
         case 'lb_liyu':
         case 'lb_biyue':
         case 'lb_qiaomeng':
+        case 'liegong':
+        case 'xingshang':
+        case 'zaiqi':
+        case 'shuangxiong':
+        case 'jianchu':
+        case 'tuntian':
+        case 'jiang':
+        case 'guzheng':
+        case 'xinsheng':
+        case 'niepan':
+        case 'zhiba_take':
           return { type: 'choose_option', optionId: 'yes' };
+        case 'shensu_judge': {
+          const hasBadJudge = ai.judgeZone.some(
+            (c) => (c.asDelayedTrick ?? c.name) === 'indulgence' || (c.asDelayedTrick ?? c.name) === 'supply_shortage'
+          );
+          return { type: 'choose_option', optionId: hasBadJudge ? 'yes' : 'no' };
+        }
+        case 'shensu_play':
+        case 'shensu_discard':
+          return { type: 'choose_option', optionId: 'no' };
+        case 'jushou':
+          return { type: 'choose_option', optionId: ai.hand.length <= 2 && !ai.flipped ? 'yes' : 'no' };
+        case 'jiewei':
+          return { type: 'choose_option', optionId: ai.hand.length >= 2 ? 'yes' : 'no' };
+        case 'kuanggu':
+        case 'zhiji':
+          return {
+            type: 'choose_option',
+            optionId:
+              ai.hp < ai.maxHp && prompt.options.some((o) => o.id === 'heal') ? 'heal' : 'draw'
+          };
+        case 'qimou':
+          return { type: 'choose_option', optionId: prompt.options[0]?.id ?? '1' };
+        case 'tianxiang':
+          return { type: 'choose_option', optionId: ai.hp <= 2 || ai.hand.length >= 3 ? 'yes' : 'no' };
+        case 'tianxiang_mode': {
+          const victim = state.players.find((p) => p.alive && prompt.message.includes(p.name));
+          if (victim && evaluateRelation(state, ai, victim) < 0 && victim.maxHp - victim.hp >= 2) {
+            return { type: 'choose_option', optionId: 'lose_hp_gain' };
+          }
+          return { type: 'choose_option', optionId: 'damage_draw' };
+        }
+        case 'fenji': {
+          const victim = state.players.find((p) => p.alive && prompt.message.includes(p.name));
+          const good = Boolean(victim && evaluateRelation(state, ai, victim) > 0 && ai.hp >= 2);
+          return { type: 'choose_option', optionId: good ? 'yes' : 'no' };
+        }
+        case 'leiji':
+        case 'fangzhu': {
+          const hasEnemy = state.players.some(
+            (p) => p.alive && p.id !== ai.id && evaluateRelation(state, ai, p) < 0
+          );
+          return { type: 'choose_option', optionId: hasEnemy ? 'yes' : 'no' };
+        }
+        case 'guhuo_declare': {
+          if (ai.hp < ai.maxHp && prompt.options.some((o) => o.id === 'peach')) {
+            return { type: 'choose_option', optionId: 'peach' };
+          }
+          if (prompt.options.some((o) => o.id === 'ex_nihilo')) {
+            return { type: 'choose_option', optionId: 'ex_nihilo' };
+          }
+          const nonCancel = prompt.options.find((o) => o.id !== 'cancel');
+          return { type: 'choose_option', optionId: nonCancel ? nonCancel.id : 'cancel' };
+        }
+        case 'guhuo_question': {
+          if (ai.hp <= 1) return { type: 'choose_option', optionId: 'trust' };
+          const yuji = state.players.find((p) => p.alive && prompt.message.includes(p.name));
+          const hostile = yuji ? evaluateRelation(state, ai, yuji) < 0 : false;
+          const shouldDoubt = hostile && ai.hp >= 3 && engine.rng.nextInt(100) < 35;
+          return { type: 'choose_option', optionId: shouldDoubt ? 'doubt' : 'trust' };
+        }
+        case 'jieming': {
+          const needyAlly = state.players.some(
+            (p) =>
+              p.alive &&
+              evaluateRelation(state, ai, p) > 0 &&
+              p.hand.length < Math.min(5, p.maxHp)
+          );
+          return { type: 'choose_option', optionId: needyAlly ? 'yes' : 'no' };
+        }
+        case 'songwei':
+        case 'baonue': {
+          const lord = state.players.find((p) => p.alive && p.role === 'lord');
+          const isAlly = lord ? evaluateRelation(state, ai, lord) > 0 : false;
+          return { type: 'choose_option', optionId: isAlly ? 'yes' : 'no' };
+        }
+        case 'lieren': {
+          const hasHigh = ai.hand.some((c) => c.rank >= 9);
+          return { type: 'choose_option', optionId: hasHigh || ai.hand.length >= 3 ? 'yes' : 'no' };
+        }
+        case 'yinghun':
+          return { type: 'choose_option', optionId: 'yes' };
+        case 'yinghun_mode': {
+          const target = state.players.find((p) => p.alive && prompt.message.includes(p.name));
+          const isAlly = target ? evaluateRelation(state, ai, target) > 0 : false;
+          return { type: 'choose_option', optionId: isAlly ? 'draw_x' : 'discard_x' };
+        }
+        case 'haoshi': {
+          const hasAlly = state.players.some(
+            (p) => p.alive && p.id !== ai.id && evaluateRelation(state, ai, p) > 0
+          );
+          return { type: 'choose_option', optionId: ai.hand.length <= 2 || hasAlly ? 'yes' : 'no' };
+        }
+        case 'benghuai':
+          return { type: 'choose_option', optionId: ai.maxHp > ai.hp ? 'lose_max_hp' : 'lose_hp' };
+        case 'qiaobian_judge':
+          return {
+            type: 'choose_option',
+            optionId: ai.judgeZone.length > 0 && ai.hand.length >= 2 ? 'yes' : 'no'
+          };
+        case 'qiaobian_draw': {
+          const enemiesWithCards = state.players.filter(
+            (p) => p.alive && p.id !== ai.id && p.hand.length > 0 && evaluateRelation(state, ai, p) < 0
+          );
+          return {
+            type: 'choose_option',
+            optionId: enemiesWithCards.length >= 2 && ai.hand.length >= 2 ? 'yes' : 'no'
+          };
+        }
+        case 'qiaobian_play':
+          return { type: 'choose_option', optionId: 'no' };
+        case 'qiaobian_discard': {
+          const excess = ai.hand.length - getHandLimit(state, ai, engine.modifiers);
+          return { type: 'choose_option', optionId: excess >= 2 ? 'yes' : 'no' };
+        }
+        case 'fangquan_skip':
+        case 'fangquan_grant': {
+          const hasAlly = state.players.some(
+            (p) => p.alive && p.id !== ai.id && evaluateRelation(state, ai, p) > 0
+          );
+          const ok = prompt.reason === 'fangquan_skip' ? hasAlly && ai.hand.length <= 3 : hasAlly;
+          return { type: 'choose_option', optionId: ok ? 'yes' : 'no' };
+        }
+        case 'zhiba_accept':
+          return { type: 'choose_option', optionId: ai.hand.length >= 2 ? 'yes' : 'no' };
+        case 'guzheng_return':
+          return { type: 'choose_option', optionId: prompt.options[0].id };
+        case 'beige': {
+          const victim = state.players.find((p) => p.alive && prompt.message.includes(p.name));
+          const good = Boolean(victim && evaluateRelation(state, ai, victim) > 0 && ai.hand.length >= 2);
+          return { type: 'choose_option', optionId: good ? 'yes' : 'no' };
+        }
+        case 'huashen': {
+          if (ai.activeHuashenSkillId && prompt.options.some((o) => o.id === 'keep')) {
+            return { type: 'choose_option', optionId: 'keep' };
+          }
+          const nonKeep = prompt.options.find((o) => o.id !== 'keep');
+          return { type: 'choose_option', optionId: nonKeep ? nonKeep.id : prompt.options[0].id };
+        }
         case 'lb_luoyi_confirm':
           return {
             type: 'choose_option',
@@ -475,7 +624,11 @@ export function decideAIAction(engine: GameEngine, playerId: string): PlayerResp
     }
 
     case 'choose_target': {
-      if (prompt.reason === 'tuxi' || prompt.reason === 'lb_tuxi') {
+      if (
+        prompt.reason === 'tuxi' ||
+        prompt.reason === 'lb_tuxi' ||
+        prompt.reason === 'qiaobian_draw'
+      ) {
         const enemies = prompt.eligibleTargetIds
           .map((id) => engine.getPlayer(id))
           .filter((p) => evaluateRelation(state, ai, p) < 0)
@@ -492,7 +645,10 @@ export function decideAIAction(engine: GameEngine, playerId: string): PlayerResp
         prompt.reason === 'lb_yiji_give' ||
         prompt.reason === 'lb_qingjian_target' ||
         prompt.reason === 'lb_yajiao_give' ||
-        prompt.reason === 'lb_jianyan_target'
+        prompt.reason === 'lb_jianyan_target' ||
+        prompt.reason === 'jieming_target' ||
+        prompt.reason === 'haoshi_target' ||
+        prompt.reason === 'fangquan_target'
       ) {
         const allies = prompt.eligibleTargetIds
           .map((id) => engine.getPlayer(id))
@@ -503,6 +659,36 @@ export function decideAIAction(engine: GameEngine, playerId: string): PlayerResp
         }
         if (prompt.optional) {
           return { type: 'choose_target', targetIds: [], cancelled: true };
+        }
+        return { type: 'choose_target', targetIds: [prompt.eligibleTargetIds[0]] };
+      }
+      if (prompt.reason === 'move_field_source') {
+        // Prefer taking an equip from an enemy or removing a delayed trick from an ally
+        const allyBadJudge = prompt.eligibleTargetIds
+          .map((id) => engine.getPlayer(id))
+          .find((p) => evaluateRelation(state, ai, p) > 0 && p.judgeZone.length > 0);
+        if (allyBadJudge) {
+          return { type: 'choose_target', targetIds: [allyBadJudge.id] };
+        }
+        const enemy = pickBestEnemy(state, ai, prompt.eligibleTargetIds);
+        if (enemy) {
+          return { type: 'choose_target', targetIds: [enemy.id] };
+        }
+        return { type: 'choose_target', targetIds: [], cancelled: true };
+      }
+      if (prompt.reason === 'move_field_dest') {
+        const isJudgeCard =
+          prompt.message.includes('乐不思蜀') ||
+          prompt.message.includes('兵粮寸断') ||
+          prompt.message.includes('闪电');
+        if (isJudgeCard) {
+          const enemy = pickBestEnemy(state, ai, prompt.eligibleTargetIds);
+          if (enemy) return { type: 'choose_target', targetIds: [enemy.id] };
+        } else {
+          const ally = prompt.eligibleTargetIds
+            .map((id) => engine.getPlayer(id))
+            .find((p) => evaluateRelation(state, ai, p) > 0);
+          if (ally) return { type: 'choose_target', targetIds: [ally.id] };
         }
         return { type: 'choose_target', targetIds: [prompt.eligibleTargetIds[0]] };
       }
@@ -663,9 +849,22 @@ function decideChooseCard(
       return { type: 'choose_card', cardIds: [], cancelled: true };
     }
 
+    case 'pindian': {
+      // Pick highest rank card to maximize win rate!
+      const sorted = [...eligible].sort((a, b) => b.rank - a.rank);
+      return { type: 'choose_card', cardIds: [sorted[0].id] };
+    }
+
     case 'general_skill': {
       if (prompt.optional) {
-        if (prompt.message.includes('鬼才')) {
+        if (prompt.message.includes('鬼才') || prompt.message.includes('鬼道')) {
+          return { type: 'choose_card', cardIds: [], cancelled: true };
+        }
+        if (prompt.message.includes('享乐')) {
+          const sorted = [...eligible].sort((a, b) => cardKeepValue(a, ai) - cardKeepValue(b, ai));
+          if (sorted.length > 0 && cardKeepValue(sorted[0], ai) < 70) {
+            return { type: 'choose_card', cardIds: [sorted[0].id] };
+          }
           return { type: 'choose_card', cardIds: [], cancelled: true };
         }
         if (prompt.message.includes('激将')) {
@@ -1093,6 +1292,319 @@ function decidePlayPhase(engine: GameEngine, ai: PlayerState): PlayerResponse {
         };
       }
     }
+
+    // ===== Phase 4C Wind/Fire/Forest/Mountain Active Skills (all strictly bounded / loop-free) =====
+
+    // 邓艾急袭: spend 田 as Snatch on enemy
+    const jixiDengai = byId('jixi_dengai');
+    if (jixiDengai) {
+      const enemy = pickBestEnemy(state, ai, jixiDengai.eligibleTargetIds);
+      if (enemy) {
+        return {
+          type: 'play_action',
+          action: { type: 'activate_skill', skillId: 'jixi_dengai', targetIds: [enemy.id] }
+        };
+      }
+    }
+
+    // 典韦强袭: up to 2x/turn against distinct enemies
+    const qiangxi = byId('qiangxi');
+    if (qiangxi) {
+      const enemy = pickBestEnemy(state, ai, qiangxi.eligibleTargetIds);
+      if (enemy) {
+        const spareWeapon = qiangxi.eligibleCardIds.find((id) =>
+          ai.hand.some((c) => c.id === id)
+        );
+        if (spareWeapon !== undefined) {
+          return {
+            type: 'play_action',
+            action: {
+              type: 'activate_skill',
+              skillId: 'qiangxi',
+              cardIds: [spareWeapon],
+              targetIds: [enemy.id]
+            }
+          };
+        }
+        if (ai.hp >= 3 || enemy.hp <= 1) {
+          return {
+            type: 'play_action',
+            action: {
+              type: 'activate_skill',
+              skillId: 'qiangxi',
+              cardIds: [],
+              targetIds: [enemy.id]
+            }
+          };
+        }
+      }
+    }
+
+    // 荀彧驱虎: once/turn pindian with higher-HP enemy when holding high card
+    const quhu = byId('quhu');
+    if (quhu && ai.hand.some((c) => c.rank >= 9)) {
+      const enemy = pickBestEnemy(state, ai, quhu.eligibleTargetIds);
+      if (enemy) {
+        return {
+          type: 'play_action',
+          action: { type: 'activate_skill', skillId: 'quhu', targetIds: [enemy.id] }
+        };
+      }
+    }
+
+    // 太史慈天义: once/turn pindian when holding >=1 Slash and a decent rank card
+    const tianyi = byId('tianyi');
+    if (
+      tianyi &&
+      usable.some((c) => isSlashCardName(c.name)) &&
+      ai.hand.some((c) => c.rank >= 8)
+    ) {
+      const enemy = pickBestEnemy(state, ai, tianyi.eligibleTargetIds);
+      if (enemy) {
+        return {
+          type: 'play_action',
+          action: { type: 'activate_skill', skillId: 'tianyi', targetIds: [enemy.id] }
+        };
+      }
+    }
+
+    // 姜维挑衅: once/turn on enemy
+    const tiaoxin = byId('tiaoxin');
+    if (tiaoxin) {
+      const enemy = pickBestEnemy(state, ai, tiaoxin.eligibleTargetIds, (t) => -t.hand.length * 10);
+      if (enemy) {
+        return {
+          type: 'play_action',
+          action: { type: 'activate_skill', skillId: 'tiaoxin', targetIds: [enemy.id] }
+        };
+      }
+    }
+
+    // 鲁肃缔盟: once/turn swap ally's small hand with enemy's large hand
+    const dimeng = byId('dimeng');
+    if (dimeng && dimeng.eligibleTargetIds.length >= 2) {
+      const allies = dimeng.eligibleTargetIds
+        .map((id) => engine.getPlayer(id))
+        .filter((p) => evaluateRelation(state, ai, p) > 0)
+        .sort((a, b) => a.hand.length - b.hand.length);
+      const enemies = dimeng.eligibleTargetIds
+        .map((id) => engine.getPlayer(id))
+        .filter((p) => evaluateRelation(state, ai, p) < 0)
+        .sort((a, b) => b.hand.length - a.hand.length);
+      if (allies.length > 0 && enemies.length > 0) {
+        const diff = enemies[0].hand.length - allies[0].hand.length;
+        const totalCards = ai.hand.length + Object.values(ai.equips).filter(Boolean).length;
+        if (diff >= 2 && diff <= totalCards) {
+          return {
+            type: 'play_action',
+            action: {
+              type: 'activate_skill',
+              skillId: 'dimeng',
+              targetIds: [allies[0].id, enemies[0].id]
+            }
+          };
+        }
+      }
+    }
+
+    // 贾诩乱武 (限定技): fire when >=2 enemies alive or 1v1 enemy has <=1 hand card
+    const luanwu = byId('luanwu');
+    if (luanwu) {
+      const enemies = state.players.filter(
+        (p) => p.alive && p.id !== ai.id && evaluateRelation(state, ai, p) < 0
+      );
+      if (enemies.length >= 2 || (enemies.length === 1 && enemies[0].hand.length <= 1)) {
+        return {
+          type: 'play_action',
+          action: { type: 'activate_skill', skillId: 'luanwu' }
+        };
+      }
+    }
+
+    // 魏延奇谋 (限定技): fire when healthy & holding >=2 Slashes
+    const qimou = byId('qimou');
+    if (
+      qimou &&
+      ai.hp >= 3 &&
+      usable.filter((c) => isSlashCardName(c.name)).length >= 2
+    ) {
+      return {
+        type: 'play_action',
+        action: { type: 'activate_skill', skillId: 'qimou' }
+      };
+    }
+
+    // 于吉蛊惑 (1/turn): activate when holding >=2 cards
+    const guhuo = byId('guhuo');
+    if (guhuo && ai.hand.length >= 2) {
+      const lowCard = ai.hand
+        .filter((c) => guhuo.eligibleCardIds.includes(c.id))
+        .sort((a, b) => cardKeepValue(a, ai) - cardKeepValue(b, ai))[0];
+      if (lowCard) {
+        return {
+          type: 'play_action',
+          action: { type: 'activate_skill', skillId: 'guhuo', cardIds: [lowCard.id] }
+        };
+      }
+    }
+
+    // 张昭&张纮直谏: equip hand gear directly onto ally for +1 draw
+    const zhijian = byId('zhijian');
+    if (zhijian) {
+      const ally = zhijian.eligibleTargetIds
+        .map((id) => engine.getPlayer(id))
+        .find((p) => evaluateRelation(state, ai, p) > 0);
+      if (ally) {
+        const gearId = zhijian.eligibleCardIds.find((id) => {
+          const c = findCard(id);
+          if (!c) return false;
+          if (c.subtype === 'weapon') return !ally.equips.weapon;
+          if (c.subtype === 'armor') return !ally.equips.armor;
+          if (c.subtype === 'horse_plus') return !ally.equips.horsePlus;
+          if (c.subtype === 'horse_minus') return !ally.equips.horseMinus;
+          if (c.subtype === 'treasure') return !ally.equips.treasure;
+          return false;
+        });
+        if (gearId !== undefined) {
+          return {
+            type: 'play_action',
+            action: {
+              type: 'activate_skill',
+              skillId: 'zhijian',
+              cardIds: [gearId],
+              targetIds: [ally.id]
+            }
+          };
+        }
+      }
+    }
+
+    // 徐晃断粮: convert low-value black basic/equip into Supply Shortage on enemy
+    const duanliang = byId('duanliang');
+    if (duanliang) {
+      const enemy = pickBestEnemy(state, ai, duanliang.eligibleTargetIds, (t) => t.hand.length * 8);
+      const lowBlack = ai.hand
+        .filter((c) => duanliang.eligibleCardIds.includes(c.id) && cardKeepValue(c, ai) < 62)
+        .sort((a, b) => cardKeepValue(a, ai) - cardKeepValue(b, ai))[0];
+      if (enemy && lowBlack) {
+        return {
+          type: 'play_action',
+          action: {
+            type: 'activate_skill',
+            skillId: 'duanliang',
+            cardIds: [lowBlack.id],
+            targetIds: [enemy.id]
+          }
+        };
+      }
+    }
+
+    // 卧龙诸葛亮火计: red hand card -> Fire Attack on enemy when holding >=3 hand cards
+    const huoji = byId('huoji');
+    if (huoji && ai.hand.length >= 3) {
+      const enemy = pickBestEnemy(state, ai, huoji.eligibleTargetIds, (t) =>
+        t.equips.armor?.name === 'vine_armor' ? 35 : 0
+      );
+      const lowRed = ai.hand
+        .filter((c) => huoji.eligibleCardIds.includes(c.id) && cardKeepValue(c, ai) < 65)
+        .sort((a, b) => cardKeepValue(a, ai) - cardKeepValue(b, ai))[0];
+      if (enemy && lowRed) {
+        return {
+          type: 'play_action',
+          action: {
+            type: 'activate_skill',
+            skillId: 'huoji',
+            cardIds: [lowRed.id],
+            targetIds: [enemy.id]
+          }
+        };
+      }
+    }
+
+    // 颜良&文丑双雄: different-color card -> Duel on enemy
+    const shuangxiong = byId('shuangxiong');
+    if (shuangxiong) {
+      const mySlashes = usable.filter((c) => isSlashCardName(c.name)).length;
+      const enemy = pickBestEnemy(state, ai, shuangxiong.eligibleTargetIds, (t) => -t.hand.length * 8);
+      const lowCard = ai.hand
+        .filter((c) => shuangxiong.eligibleCardIds.includes(c.id) && cardKeepValue(c, ai) < 65)
+        .sort((a, b) => cardKeepValue(a, ai) - cardKeepValue(b, ai))[0];
+      if (enemy && lowCard && (mySlashes >= 1 || enemy.hand.length === 0)) {
+        return {
+          type: 'play_action',
+          action: {
+            type: 'activate_skill',
+            skillId: 'shuangxiong',
+            cardIds: [lowCard.id],
+            targetIds: [enemy.id]
+          }
+        };
+      }
+    }
+
+    // 袁绍乱击: 2 same-suit cards -> Archery Attack when hand >= 4 and no endangered ally
+    const luanji = byId('luanji');
+    if (luanji && ai.hand.length >= 4) {
+      const endangeredAlly = state.players.some(
+        (p) => p.alive && p.id !== ai.id && evaluateRelation(state, ai, p) > 0 && p.hp <= 1
+      );
+      if (!endangeredAlly) {
+        const eligibleCards = ai.hand
+          .filter((c) => luanji.eligibleCardIds.includes(c.id) && cardKeepValue(c, ai) < 75)
+          .sort((a, b) => cardKeepValue(a, ai) - cardKeepValue(b, ai));
+        for (let i = 0; i < eligibleCards.length; i++) {
+          const pair = eligibleCards.find(
+            (c, j) => j > i && c.suit === eligibleCards[i].suit
+          );
+          if (pair) {
+            return {
+              type: 'play_action',
+              action: {
+                type: 'activate_skill',
+                skillId: 'luanji',
+                cardIds: [eligibleCards[i].id, pair.id]
+              }
+            };
+          }
+        }
+      }
+    }
+
+    // 董卓酒池: spade hand card -> Alcohol if holding playable Slash
+    const jiuchi = byId('jiuchi');
+    if (jiuchi && playable.some((p) => {
+      const c = findCard(p.cardId);
+      return Boolean(c && isSlashCardName(c.name));
+    })) {
+      const lowSpade = ai.hand
+        .filter((c) => jiuchi.eligibleCardIds.includes(c.id) && cardKeepValue(c, ai) < 62)
+        .sort((a, b) => cardKeepValue(a, ai) - cardKeepValue(b, ai))[0];
+      if (lowSpade) {
+        return {
+          type: 'play_action',
+          action: { type: 'activate_skill', skillId: 'jiuchi', cardIds: [lowSpade.id] }
+        };
+      }
+    }
+
+    // 黄天给牌 (主公技): give Dodge/Lightning to allied Zhang Jiao
+    const huangtianGive = byId('huangtian_give');
+    if (huangtianGive && ai.hand.length >= 2) {
+      const allyLord = huangtianGive.eligibleTargetIds
+        .map((id) => engine.getPlayer(id))
+        .find((p) => evaluateRelation(state, ai, p) > 0);
+      if (allyLord && huangtianGive.eligibleCardIds.length > 0) {
+        return {
+          type: 'play_action',
+          action: {
+            type: 'activate_skill',
+            skillId: 'huangtian_give',
+            cardIds: [huangtianGive.eligibleCardIds[0]],
+            targetIds: [allyLord.id]
+          }
+        };
+      }
+    }
   }
 
   // 1. Heal self with Peach immediately when wounded
@@ -1213,7 +1725,7 @@ function decidePlayPhase(engine: GameEngine, ai: PlayerState): PlayerResponse {
     }
   }
 
-  // 9. Iron Chain: chain 2 unchained enemies if holding elemental attack, else recast for card cycling!
+  // 9. Iron Chain: chain 2 unchained eligible enemies if holding elemental attack, else recast for card cycling!
   const chainInfo = playable.find((p) => findCard(p.cardId)?.name === 'iron_chain');
   if (chainInfo) {
     const hasElemental = usable.some(
@@ -1224,9 +1736,13 @@ function decidePlayPhase(engine: GameEngine, ai: PlayerState): PlayerResponse {
         (c.name === 'slash' && ai.equips.weapon?.name === 'fan')
     );
     const unchainedEnemies = state.players.filter(
-      (p) => p.alive && !p.chained && evaluateRelation(state, ai, p) < 0
+      (p) =>
+        p.alive &&
+        !p.chained &&
+        chainInfo.eligibleTargetIds.includes(p.id) &&
+        evaluateRelation(state, ai, p) < 0
     );
-    if (hasElemental && unchainedEnemies.length >= 2) {
+    if (hasElemental && unchainedEnemies.length >= 2 && chainInfo.maxTargets >= 2) {
       return {
         type: 'play_action',
         action: {
@@ -1367,13 +1883,17 @@ function decidePlayPhase(engine: GameEngine, ai: PlayerState): PlayerResponse {
   // 14. Serpent Spear in Play phase if over hand limit or enemy is at 1 HP
   const prompt = state.pendingPrompt;
   if (prompt?.type === 'play_action' && prompt.canUseSerpentSpear) {
-    const enemyInRange = pickBestEnemy(
-      state,
-      ai,
-      state.players
-        .filter((p) => p.alive && p.id !== ai.id && isInAttackRange(state, ai.id, p.id, engine.modifiers))
-        .map((p) => p.id)
-    );
+    const rawTargets = state.players
+      .filter(
+        (p) =>
+          p.alive &&
+          p.id !== ai.id &&
+          isInAttackRange(state, ai.id, p.id, engine.modifiers) &&
+          engine.modifiers.canBeTargetedByCard(state, ai, p, 'slash')
+      )
+      .map((p) => p.id);
+    const legalTargets = engine.modifiers.filterSlashTargets(state, ai, rawTargets);
+    const enemyInRange = pickBestEnemy(state, ai, legalTargets);
     const limit = getHandLimit(state, ai, engine.modifiers);
     if (enemyInRange && (ai.hand.length > limit || enemyInRange.hp <= 1) && usable.length >= 2) {
       const sorted = [...usable].sort((a, b) => cardKeepValue(a, ai) - cardKeepValue(b, ai));

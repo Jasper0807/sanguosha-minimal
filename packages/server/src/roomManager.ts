@@ -756,6 +756,7 @@ export class RoomManager {
       if (
         patch.generalPack === 'standard' ||
         patch.generalPack === 'limit_break' ||
+        patch.generalPack === 'expansion' ||
         patch.generalPack === 'all' ||
         patch.generalPack === 'blank'
       ) {

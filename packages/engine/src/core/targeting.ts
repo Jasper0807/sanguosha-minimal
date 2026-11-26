@@ -80,11 +80,12 @@ export function getPlayableCardInfo(
   }
 
   const canTarget = (target: PlayerState, cardName: CardInstance['name']): boolean =>
-    modifiers ? modifiers.canBeTargetedByCard(state, player, target, cardName) : true;
+    modifiers ? modifiers.canBeTargetedByCard(state, player, target, cardName, card) : true;
   const trickNoDist = modifiers ? modifiers.isTrickDistanceUnlimited(state, player) : false;
 
   // Basic cards
   if (isSlashCardName(card.name)) {
+    if (player.cannotUseSlashThisTurn) return null;
     const limit = getSlashLimit(state, player, modifiers);
     if (player.slashUsedThisTurn >= limit) return null;
     let targets = others
@@ -99,7 +100,9 @@ export function getPlayableCardInfo(
       targets = modifiers.filterSlashTargets(state, player, targets);
     }
     if (targets.length === 0) return null;
-    const maxTargets = isLastHandCardSlash(player, card) ? Math.min(3, targets.length) : 1;
+    const extraTargets = modifiers ? modifiers.getSlashExtraTargetsDelta(state, player, card) : 0;
+    const baseMax = isLastHandCardSlash(player, card) ? 3 : 1;
+    const maxTargets = Math.min(targets.length, baseMax + extraTargets);
     return {
       cardId: card.id,
       needsTarget: true,
@@ -248,13 +251,15 @@ export function getPlayableCardInfo(
     }
 
     case 'iron_chain': {
-      const allAlive = state.players.filter((p) => p.alive).map((p) => p.id);
+      const eligible = state.players
+        .filter((p) => p.alive && canTarget(p, 'iron_chain'))
+        .map((p) => p.id);
       return {
         cardId: card.id,
         needsTarget: true,
         minTargets: 1,
-        maxTargets: Math.min(2, allAlive.length),
-        eligibleTargetIds: allAlive,
+        maxTargets: Math.min(2, eligible.length),
+        eligibleTargetIds: eligible,
         canRecast: true
       };
     }
@@ -302,8 +307,10 @@ export function getPlayableCardInfo(
       const targets = others
         .filter(
           (t) =>
-            (trickNoDist || getDistance(state, playerId, t.id, modifiers) <= 1) &&
-            !t.judgeZone.some((j) => j.name === 'supply_shortage') &&
+            (trickNoDist ||
+              Boolean(modifiers?.isSupplyShortageDistanceUnlimited(state, player, t)) ||
+              getDistance(state, playerId, t.id, modifiers) <= 1) &&
+            !t.judgeZone.some((j) => (j.asDelayedTrick ?? j.name) === 'supply_shortage') &&
             canTarget(t, 'supply_shortage')
         )
         .map((t) => t.id);
@@ -318,7 +325,8 @@ export function getPlayableCardInfo(
     }
 
     case 'lightning': {
-      if (player.judgeZone.some((j) => j.name === 'lightning')) return null;
+      if (player.judgeZone.some((j) => (j.asDelayedTrick ?? j.name) === 'lightning')) return null;
+      if (!canTarget(player, 'lightning')) return null;
       return {
         cardId: card.id,
         needsTarget: false,
@@ -356,6 +364,7 @@ export function canUseSerpentSpearInPlay(
 ): boolean {
   const player = state.players.find((p) => p.id === playerId);
   if (!player || !player.alive) return false;
+  if (player.cannotUseSlashThisTurn || player.cannotPlayHandCardsThisTurn) return false;
   if (player.equips.weapon?.name !== 'serpent_spear') return false;
   if (player.slashUsedThisTurn >= getSlashLimit(state, player, modifiers)) return false;
   if (getUsableCards(player).length < 2) return false;

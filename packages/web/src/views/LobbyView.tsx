@@ -299,10 +299,15 @@ export function LobbyView({
                   </select>
                   <select
                     value={generalPack}
-                    onChange={(e) => setGeneralPack(e.target.value as 'standard' | 'limit_break' | 'all' | 'blank')}
+                    onChange={(e) =>
+                      setGeneralPack(
+                        e.target.value as 'standard' | 'limit_break' | 'expansion' | 'all' | 'blank'
+                      )
+                    }
                     className="px-2.5 py-1.5 rounded-lg border border-stone-300 dark:border-stone-700 bg-stone-50 dark:bg-stone-900"
                   >
-                    <option value="all">标准+界限 57将</option>
+                    <option value="all">全武将池 89将</option>
+                    <option value="expansion">风林火山 32将</option>
                     <option value="limit_break">界限突破 30将</option>
                     <option value="standard">标准包 27将</option>
                     <option value="blank">白板测试将</option>
@@ -443,6 +448,22 @@ export function LobbyView({
 
                 <button
                   type="button"
+                  onClick={() => setGeneralPack('expansion')}
+                  className={[
+                    'text-left rounded-lg p-3 border-2 transition-all',
+                    generalPack === 'expansion'
+                      ? 'border-stone-900 dark:border-amber-400 bg-stone-50 dark:bg-stone-800'
+                      : 'border-stone-200 dark:border-stone-700'
+                  ].join(' ')}
+                >
+                  <div className="font-bold text-sm">风林火山（OL 32 武将）</div>
+                  <div className="text-[11px] text-stone-500 mt-0.5">
+                    风8 / 火8 / 林8 / 山8 · 拼点/翻面/移牌/蛊惑/化身全收录
+                  </div>
+                </button>
+
+                <button
+                  type="button"
                   onClick={() => setGeneralPack('all')}
                   className={[
                     'text-left rounded-lg p-3 border-2 transition-all',
@@ -451,9 +472,9 @@ export function LobbyView({
                       : 'border-stone-200 dark:border-stone-700'
                   ].join(' ')}
                 >
-                  <div className="font-bold text-sm">标准 + 界限混池（57 武将）</div>
+                  <div className="font-bold text-sm">全武将混池（OL 89 武将）</div>
                   <div className="text-[11px] text-stone-500 mt-0.5">
-                    全池混选，同名标/界武将自动互斥不重复
+                    标准27 + 界限30 + 风林火山32 · 同名武将自动互斥
                   </div>
                 </button>
 
@@ -461,7 +482,7 @@ export function LobbyView({
                   type="button"
                   onClick={() => setGeneralPack('blank')}
                   className={[
-                    'text-left rounded-lg p-3 border-2 transition-all',
+                    'text-left rounded-lg p-3 border-2 transition-all sm:col-span-2',
                     generalPack === 'blank'
                       ? 'border-stone-900 dark:border-amber-400 bg-stone-50 dark:bg-stone-800'
                       : 'border-stone-200 dark:border-stone-700'

@@ -96,6 +96,7 @@ function makeState(players: PlayerState[], mode: '1v1' | '2v2' | 'identity5' = '
     emptyDeckTurnCounter: 0,
     turnSuitsDiscarded: [],
     turnDamageDealtByPlayer: {},
+    extraTurnQueue: [],
     actionLog: []
   };
 }

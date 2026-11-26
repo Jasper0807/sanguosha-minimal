@@ -185,6 +185,38 @@ export function PlayerSeat({
           </div>
         )}
 
+        {/* Pile & Huashen Badges (田 / 创 / 谦逊 / 化身) */}
+        {((player.removedCardCounts && Object.keys(player.removedCardCounts).length > 0) ||
+          player.huashenCount) && (
+          <div className="flex flex-wrap gap-1">
+            {player.removedCardCounts &&
+              Object.entries(player.removedCardCounts).map(([pileKey, cnt]) => {
+                const pileLabel =
+                  pileKey === 'buqu' || pileKey === 'chuang'
+                    ? '创'
+                    : pileKey === 'tian'
+                      ? '田'
+                      : pileKey === 'lb_qianxun'
+                        ? '谦逊'
+                        : pileKey;
+                return (
+                  <span
+                    key={pileKey}
+                    className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 dark:bg-amber-950/50 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-700"
+                  >
+                    {pileLabel}×{cnt}
+                  </span>
+                );
+              })}
+            {player.huashenCount && player.huashenCount > 0 && (
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-50 dark:bg-purple-950/50 text-purple-900 dark:text-purple-200 border border-purple-300 dark:border-purple-700">
+                化身×{player.huashenCount}
+                {player.activeHuashenGeneralName ? `·${player.activeHuashenGeneralName}` : ''}
+              </span>
+            )}
+          </div>
+        )}
+
         {/* Equipment Strip */}
         <div className="flex flex-wrap gap-1 pt-1 border-t border-stone-100 dark:border-stone-800">
           {equipItems.filter((x) => x.card).length === 0 ? (
