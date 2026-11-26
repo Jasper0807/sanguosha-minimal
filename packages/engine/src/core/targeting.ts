@@ -71,13 +71,23 @@ export function getPlayableCardInfo(
     };
   }
 
+  const canTarget = (target: PlayerState, cardName: CardInstance['name']): boolean =>
+    modifiers ? modifiers.canBeTargetedByCard(state, player, target, cardName) : true;
+  const trickNoDist = modifiers ? modifiers.isTrickDistanceUnlimited(state, player) : false;
+
   // Basic cards
   if (isSlashCardName(card.name)) {
     const limit = getSlashLimit(state, player, modifiers);
     if (player.slashUsedThisTurn >= limit) return null;
-    const targets = others
-      .filter((t) => isInAttackRange(state, playerId, t.id, modifiers))
+    let targets = others
+      .filter(
+        (t) =>
+          isInAttackRange(state, playerId, t.id, modifiers) && canTarget(t, card.name)
+      )
       .map((t) => t.id);
+    if (modifiers) {
+      targets = modifiers.filterSlashTargets(state, player, targets);
+    }
     if (targets.length === 0) return null;
     const maxTargets = isLastHandCardSlash(player, card) ? Math.min(3, targets.length) : 1;
     return {
@@ -154,7 +164,9 @@ export function getPlayableCardInfo(
     }
 
     case 'dismantle': {
-      const targets = others.filter((t) => hasAnyCardInZones(t, true)).map((t) => t.id);
+      const targets = others
+        .filter((t) => hasAnyCardInZones(t, true) && canTarget(t, 'dismantle'))
+        .map((t) => t.id);
       if (targets.length === 0) return null;
       return {
         cardId: card.id,
@@ -169,8 +181,9 @@ export function getPlayableCardInfo(
       const targets = others
         .filter(
           (t) =>
-            getDistance(state, playerId, t.id, modifiers) <= 1 &&
-            hasAnyCardInZones(t, true)
+            (trickNoDist || getDistance(state, playerId, t.id, modifiers) <= 1) &&
+            hasAnyCardInZones(t, true) &&
+            canTarget(t, 'snatch')
         )
         .map((t) => t.id);
       if (targets.length === 0) return null;
@@ -184,13 +197,14 @@ export function getPlayableCardInfo(
     }
 
     case 'duel': {
-      if (others.length === 0) return null;
+      const targets = others.filter((t) => canTarget(t, 'duel')).map((t) => t.id);
+      if (targets.length === 0) return null;
       return {
         cardId: card.id,
         needsTarget: true,
         minTargets: 1,
         maxTargets: 1,
-        eligibleTargetIds: others.map((t) => t.id)
+        eligibleTargetIds: targets
       };
     }
 
@@ -198,7 +212,7 @@ export function getPlayableCardInfo(
       const secondaryMap: Record<string, string[]> = {};
       const eligiblePrimary: string[] = [];
       for (const candidate of others) {
-        if (!candidate.equips.weapon) continue;
+        if (!candidate.equips.weapon || !canTarget(candidate, 'collateral')) continue;
         const secondary = state.players
           .filter(
             (s) =>
@@ -237,7 +251,7 @@ export function getPlayableCardInfo(
 
     case 'fire_attack': {
       const allWithHand = state.players
-        .filter((p) => p.alive && p.hand.length > 0)
+        .filter((p) => p.alive && p.hand.length > 0 && canTarget(p, 'fire_attack'))
         .map((p) => p.id);
       // Note: can target self if self still has another hand card besides this Fire Attack
       const validTargets = allWithHand.filter((tid) => {
@@ -258,7 +272,11 @@ export function getPlayableCardInfo(
     // Delayed Tricks
     case 'indulgence': {
       const targets = others
-        .filter((t) => !t.judgeZone.some((j) => j.name === 'indulgence'))
+        .filter(
+          (t) =>
+            !t.judgeZone.some((j) => (j.asDelayedTrick ?? j.name) === 'indulgence') &&
+            canTarget(t, 'indulgence')
+        )
         .map((t) => t.id);
       if (targets.length === 0) return null;
       return {
@@ -274,8 +292,9 @@ export function getPlayableCardInfo(
       const targets = others
         .filter(
           (t) =>
-            getDistance(state, playerId, t.id, modifiers) <= 1 &&
-            !t.judgeZone.some((j) => j.name === 'supply_shortage')
+            (trickNoDist || getDistance(state, playerId, t.id, modifiers) <= 1) &&
+            !t.judgeZone.some((j) => j.name === 'supply_shortage') &&
+            canTarget(t, 'supply_shortage')
         )
         .map((t) => t.id);
       if (targets.length === 0) return null;
@@ -330,9 +349,19 @@ export function canUseSerpentSpearInPlay(
   if (player.equips.weapon?.name !== 'serpent_spear') return false;
   if (player.slashUsedThisTurn >= getSlashLimit(state, player, modifiers)) return false;
   if (getUsableCards(player).length < 2) return false;
-  return state.players.some(
-    (t) => t.alive && t.id !== playerId && isInAttackRange(state, playerId, t.id, modifiers)
-  );
+  let targets = state.players
+    .filter(
+      (t) =>
+        t.alive &&
+        t.id !== playerId &&
+        isInAttackRange(state, playerId, t.id, modifiers) &&
+        (modifiers ? modifiers.canBeTargetedByCard(state, player, t, 'slash') : true)
+    )
+    .map((t) => t.id);
+  if (modifiers) {
+    targets = modifiers.filterSlashTargets(state, player, targets);
+  }
+  return targets.length > 0;
 }
 
 export function canUseWoodenOxInPlay(state: GameState, playerId: string): boolean {

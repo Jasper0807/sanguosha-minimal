@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react';
 import type { CardInstance, PromptRequest } from '@sgs/engine';
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Check } from 'lucide-react';
 import { CardTile } from './CardTile';
 import { FACTION_META } from '../utils/labels';
 
@@ -8,7 +10,190 @@ interface ActionModalProps {
   onChoosePlayerCard: (choiceIndex: number) => void;
   onChooseHarvestCard: (cardId: number) => void;
   onChooseGeneral: (generalId: string) => void;
+  onChooseGuanxing: (topCardIds: number[], bottomCardIds: number[]) => void;
   onInspectCard: (card: CardInstance) => void;
+}
+
+function GuanxingModal({
+  promptId,
+  message,
+  cards,
+  onConfirm,
+  onInspectCard
+}: {
+  promptId: string;
+  message: string;
+  cards: CardInstance[];
+  onConfirm: (topCardIds: number[], bottomCardIds: number[]) => void;
+  onInspectCard: (card: CardInstance) => void;
+}) {
+  const [topIds, setTopIds] = useState<number[]>(() => cards.map((c) => c.id));
+  const [bottomIds, setBottomIds] = useState<number[]>([]);
+
+  useEffect(() => {
+    setTopIds(cards.map((c) => c.id));
+    setBottomIds([]);
+  }, [promptId, cards]);
+
+  const cardMap = new Map(cards.map((c) => [c.id, c]));
+
+  const moveToBottom = (id: number) => {
+    setTopIds((prev) => prev.filter((x) => x !== id));
+    setBottomIds((prev) => [...prev, id]);
+  };
+
+  const moveToTop = (id: number) => {
+    setBottomIds((prev) => prev.filter((x) => x !== id));
+    setTopIds((prev) => [...prev, id]);
+  };
+
+  const shift = (list: number[], setList: (next: number[]) => void, idx: number, dir: -1 | 1) => {
+    const target = idx + dir;
+    if (target < 0 || target >= list.length) return;
+    const copy = [...list];
+    const tmp = copy[idx];
+    copy[idx] = copy[target];
+    copy[target] = tmp;
+    setList(copy);
+  };
+
+  return (
+    <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-[1px] flex items-center justify-center p-4">
+      <div className="max-w-3xl w-full rounded-xl bg-white dark:bg-[#1F232B] border border-stone-300 dark:border-stone-700 shadow-2xl p-5 flex flex-col gap-4">
+        <div>
+          <h3 className="text-base font-bold">{message}</h3>
+          <p className="text-xs text-stone-500 mt-0.5">
+            自由分配牌堆顶与牌堆底顺序；牌堆顶最左侧的牌将最先被判定或摸出。
+          </p>
+        </div>
+
+        {/* Top of Draw Pile */}
+        <div className="rounded-lg border border-amber-300/80 dark:border-amber-700/60 bg-amber-50/40 dark:bg-amber-950/20 p-3">
+          <div className="text-xs font-bold text-amber-900 dark:text-amber-200 mb-2 flex items-center justify-between">
+            <span>牌堆顶（从左至右依次最先翻开 / 摸出）</span>
+            <span className="font-mono">{topIds.length} 张</span>
+          </div>
+          <div className="min-h-[126px] flex flex-wrap items-center gap-3">
+            {topIds.length === 0 ? (
+              <span className="text-xs text-stone-400">未放置牌堆顶牌</span>
+            ) : (
+              topIds.map((id, idx) => {
+                const card = cardMap.get(id);
+                if (!card) return null;
+                return (
+                  <div key={id} className="flex flex-col items-center gap-1">
+                    <CardTile
+                      card={card}
+                      compact
+                      badgeText={`顶#${idx + 1}`}
+                      onInspect={onInspectCard}
+                    />
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        disabled={idx === 0}
+                        onClick={() => shift(topIds, setTopIds, idx, -1)}
+                        className="p-1 rounded border border-stone-300 dark:border-stone-600 disabled:opacity-30 hover:bg-stone-100 dark:hover:bg-stone-700"
+                        title="左移（更先摸出）"
+                      >
+                        <ArrowLeft className="w-3 h-3" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => moveToBottom(id)}
+                        className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-stone-800 text-white dark:bg-stone-200 dark:text-stone-900 inline-flex items-center gap-0.5"
+                        title="移至牌堆底"
+                      >
+                        <ArrowDown className="w-3 h-3" />
+                        底
+                      </button>
+                      <button
+                        type="button"
+                        disabled={idx === topIds.length - 1}
+                        onClick={() => shift(topIds, setTopIds, idx, 1)}
+                        className="p-1 rounded border border-stone-300 dark:border-stone-600 disabled:opacity-30 hover:bg-stone-100 dark:hover:bg-stone-700"
+                        title="右移"
+                      >
+                        <ArrowRight className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        {/* Bottom of Draw Pile */}
+        <div className="rounded-lg border border-stone-300 dark:border-stone-700 bg-stone-50 dark:bg-stone-900/50 p-3">
+          <div className="text-xs font-bold text-stone-700 dark:text-stone-300 mb-2 flex items-center justify-between">
+            <span>牌堆底（按顺序沉底）</span>
+            <span className="font-mono">{bottomIds.length} 张</span>
+          </div>
+          <div className="min-h-[126px] flex flex-wrap items-center gap-3">
+            {bottomIds.length === 0 ? (
+              <span className="text-xs text-stone-400">未放置牌堆底牌</span>
+            ) : (
+              bottomIds.map((id, idx) => {
+                const card = cardMap.get(id);
+                if (!card) return null;
+                return (
+                  <div key={id} className="flex flex-col items-center gap-1">
+                    <CardTile
+                      card={card}
+                      compact
+                      badgeText={`底#${idx + 1}`}
+                      onInspect={onInspectCard}
+                    />
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        disabled={idx === 0}
+                        onClick={() => shift(bottomIds, setBottomIds, idx, -1)}
+                        className="p-1 rounded border border-stone-300 dark:border-stone-600 disabled:opacity-30 hover:bg-stone-100 dark:hover:bg-stone-700"
+                        title="左移"
+                      >
+                        <ArrowLeft className="w-3 h-3" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => moveToTop(id)}
+                        className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-600 text-white inline-flex items-center gap-0.5"
+                        title="移至牌堆顶"
+                      >
+                        <ArrowUp className="w-3 h-3" />
+                        顶
+                      </button>
+                      <button
+                        type="button"
+                        disabled={idx === bottomIds.length - 1}
+                        onClick={() => shift(bottomIds, setBottomIds, idx, 1)}
+                        className="p-1 rounded border border-stone-300 dark:border-stone-600 disabled:opacity-30 hover:bg-stone-100 dark:hover:bg-stone-700"
+                        title="右移"
+                      >
+                        <ArrowRight className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={() => onConfirm(topIds, bottomIds)}
+            className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-lg bg-[#8B2626] hover:bg-[#731F1F] text-white text-sm font-bold shadow-sm transition-colors"
+          >
+            <Check className="w-4 h-4" />
+            确认观星排列（顶 {topIds.length} / 底 {bottomIds.length}）
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export function ActionModal({
@@ -17,9 +202,22 @@ export function ActionModal({
   onChoosePlayerCard,
   onChooseHarvestCard,
   onChooseGeneral,
+  onChooseGuanxing,
   onInspectCard
 }: ActionModalProps) {
   if (!prompt) return null;
+
+  if (prompt.type === 'choose_guanxing') {
+    return (
+      <GuanxingModal
+        promptId={prompt.promptId}
+        message={prompt.message}
+        cards={prompt.cards}
+        onConfirm={onChooseGuanxing}
+        onInspectCard={onInspectCard}
+      />
+    );
+  }
 
   if (prompt.type === 'choose_option') {
     return (
@@ -104,12 +302,12 @@ export function ActionModal({
   if (prompt.type === 'choose_general') {
     return (
       <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-[1px] flex items-center justify-center p-4">
-        <div className="max-w-3xl w-full rounded-xl bg-white dark:bg-[#1F232B] border border-stone-300 dark:border-stone-700 shadow-2xl p-5">
+        <div className="max-w-4xl w-full rounded-xl bg-white dark:bg-[#1F232B] border border-stone-300 dark:border-stone-700 shadow-2xl p-5">
           <h3 className="text-lg font-bold">{prompt.message}</h3>
           <p className="text-xs text-stone-500 mt-1">
-            从以下候选武将中选择一位出战（后续 Phase 4 将扩充至全部 89 位三国杀 OL 武将）
+            从以下候选武将中选择一位出战（悬停技能标签可查看完整三国杀 OL 规则描述）
           </p>
-          <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 max-h-[60vh] overflow-y-auto">
+          <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 max-h-[65vh] overflow-y-auto pr-1">
             {prompt.candidates.map((g) => {
               const fm = FACTION_META[g.faction];
               return (
@@ -120,7 +318,7 @@ export function ActionModal({
                   className="text-left rounded-xl border border-stone-300 dark:border-stone-600 bg-stone-50 dark:bg-stone-900 hover:border-stone-900 dark:hover:border-amber-400 hover:shadow-md transition-all overflow-hidden flex flex-col"
                 >
                   <div className={`h-1.5 w-full ${fm.bar}`} />
-                  <div className="p-3 flex flex-col gap-1">
+                  <div className="p-3 flex flex-col gap-1 flex-1">
                     <div className="flex items-center justify-between">
                       <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${fm.badge}`}>
                         {fm.label}
@@ -129,19 +327,31 @@ export function ActionModal({
                         {g.maxHp} 血 · {g.gender === 'male' ? '男' : '女'}
                       </span>
                     </div>
-                    <div className="font-serif font-bold text-base mt-1">{g.name}</div>
+                    <div className="font-serif font-bold text-base mt-0.5">{g.name}</div>
                     <div className="text-[11px] text-stone-500">{g.title}</div>
                     {g.skills.length === 0 ? (
                       <div className="text-[11px] text-stone-400 mt-1">无技能（标准测试将）</div>
                     ) : (
-                      <div className="mt-1 flex flex-wrap gap-1">
+                      <div className="mt-1.5 flex flex-col gap-1">
                         {g.skills.map((s) => (
-                          <span
+                          <div
                             key={s.id}
-                            className="px-1.5 py-0.5 rounded text-[10px] bg-stone-200 dark:bg-stone-800 font-semibold"
+                            title={`${s.name}：${s.description}`}
+                            className="text-[10px] leading-snug text-stone-600 dark:text-stone-300"
                           >
-                            {s.name}
-                          </span>
+                            <span
+                              className={[
+                                'inline-block px-1 py-0.2 rounded font-bold mr-1',
+                                s.type === 'lord'
+                                  ? 'bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-100'
+                                  : 'bg-stone-200 dark:bg-stone-800 text-stone-800 dark:text-stone-100'
+                              ].join(' ')}
+                            >
+                              {s.name}
+                              {s.type === 'lord' ? '·主' : ''}
+                            </span>
+                            <span className="line-clamp-2 opacity-80">{s.description}</span>
+                          </div>
                         ))}
                       </div>
                     )}

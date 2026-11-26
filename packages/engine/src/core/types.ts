@@ -86,6 +86,8 @@ export interface CardInstance extends CardSpec {
   suit: Suit;
   rank: CardRank;
   pack: CardPack;
+  /** Temporary delayed-trick identity while sitting in a player's judgeZone (e.g. Da Qiao's Guose) */
+  asDelayedTrick?: 'indulgence' | 'supply_shortage' | 'lightning';
 }
 
 export interface VirtualCard {
@@ -217,6 +219,7 @@ export interface GameConfig {
   deckVariant: DeckVariant;
   seed: number;
   seats: SeatConfig[];
+  generalPack?: 'standard' | 'blank' | 'all';
   skipGeneralSelection?: boolean;
   debug?: {
     revealAllHands?: boolean;
@@ -253,6 +256,19 @@ export interface HarvestPoolItem {
   takenBy: string | null;
 }
 
+export interface ActiveSkillPromptInfo {
+  skillId: string;
+  name: string;
+  description: string;
+  cardMin: number;
+  cardMax: number;
+  eligibleCardIds: number[];
+  targetMin: number;
+  targetMax: number;
+  eligibleTargetIds: string[];
+  needsConfirmOnly?: boolean;
+}
+
 export interface PlayPhasePrompt {
   type: 'play_action';
   promptId: string;
@@ -263,6 +279,7 @@ export interface PlayPhasePrompt {
   canUseSerpentSpear: boolean;
   canUseWoodenOx: boolean;
   usableSkillIds: string[];
+  usableSkills: ActiveSkillPromptInfo[];
 }
 
 export interface ChooseCardPrompt {
@@ -355,6 +372,14 @@ export interface ChooseGeneralPrompt {
   candidates: GeneralDefinition[];
 }
 
+export interface ChooseGuanxingPrompt {
+  type: 'choose_guanxing';
+  promptId: string;
+  playerId: string;
+  message: string;
+  cards: CardInstance[];
+}
+
 export type PromptRequest =
   | PlayPhasePrompt
   | ChooseCardPrompt
@@ -362,7 +387,8 @@ export type PromptRequest =
   | ChooseOptionPrompt
   | ChoosePlayerCardPrompt
   | ChooseHarvestCardPrompt
-  | ChooseGeneralPrompt;
+  | ChooseGeneralPrompt
+  | ChooseGuanxingPrompt;
 
 export interface PlayCardAction {
   type: 'play_card';
@@ -417,7 +443,8 @@ export type PlayerResponse =
   | { type: 'choose_option'; optionId: string }
   | { type: 'choose_player_card'; choiceIndex: number }
   | { type: 'choose_harvest_card'; cardId: number }
-  | { type: 'choose_general'; generalId: string };
+  | { type: 'choose_general'; generalId: string }
+  | { type: 'choose_guanxing'; topCardIds: number[]; bottomCardIds: number[] };
 
 export interface RecordedAction {
   promptId: string;
@@ -497,6 +524,7 @@ export interface PublicPlayerView {
   woodenOxCards: CardInstance[] | null;
   woodenOxUsedThisTurn: boolean;
   skills: string[];
+  skillDetails: SkillMeta[];
   marks: Record<string, number>;
   stats: PlayerStats;
 }

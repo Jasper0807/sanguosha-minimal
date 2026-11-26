@@ -1,4 +1,5 @@
-import type { ClientView, GameState, PlayerState, PublicPlayerView } from './types.js';
+import type { ClientView, GameState, PlayerState, PublicPlayerView, SkillMeta } from './types.js';
+import { getSkillMetaById } from '../data/generals/index.js';
 
 export interface ViewOptions {
   revealAllHands?: boolean;
@@ -52,6 +53,9 @@ export function buildClientView(
   const players: PublicPlayerView[] = state.players.map((p) => {
     const handVisible = canSeeHand(state, viewer, p, options);
     const roleVisible = canSeeRole(state, viewer, p, options);
+    const skillDetails: SkillMeta[] = p.skills
+      .map((sid) => getSkillMetaById(sid))
+      .filter((s): s is SkillMeta => Boolean(s));
     return {
       id: p.id,
       seat: p.seat,
@@ -80,6 +84,7 @@ export function buildClientView(
       woodenOxCards: handVisible ? [...p.woodenOxCards] : null,
       woodenOxUsedThisTurn: p.woodenOxUsedThisTurn,
       skills: [...p.skills],
+      skillDetails,
       marks: { ...p.marks },
       stats: { ...p.stats }
     };

@@ -12,7 +12,10 @@ interface PlayerSeatProps {
   selectable?: boolean;
   selected?: boolean;
   secondarySelected?: boolean;
+  selectableCardIds?: Set<number>;
+  selectedCardIds?: number[];
   onSelect?: () => void;
+  onToggleSelectCard?: (cardId: number) => void;
   onInspectCard?: (card: CardInstance) => void;
 }
 
@@ -25,7 +28,10 @@ export function PlayerSeat({
   selectable = false,
   selected = false,
   secondarySelected = false,
+  selectableCardIds,
+  selectedCardIds = [],
   onSelect,
+  onToggleSelectCard,
   onInspectCard
 }: PlayerSeatProps) {
   const faction = FACTION_META[player.faction];
@@ -158,21 +164,66 @@ export function PlayerSeat({
           </div>
         </div>
 
+        {/* General Skill Badges */}
+        {player.skillDetails && player.skillDetails.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {player.skillDetails.map((sk) => (
+              <span
+                key={sk.id}
+                title={`${sk.name}：${sk.description}`}
+                className={[
+                  'px-1.5 py-0.5 rounded text-[10px] font-bold cursor-help border',
+                  sk.type === 'lord'
+                    ? 'bg-amber-100 dark:bg-amber-950/70 text-amber-900 dark:text-amber-200 border-amber-300 dark:border-amber-700'
+                    : 'bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-200 border-stone-200 dark:border-stone-700'
+                ].join(' ')}
+              >
+                {sk.name}
+                {sk.type === 'lord' ? '·主' : sk.type === 'compulsory' ? '·锁' : ''}
+              </span>
+            ))}
+          </div>
+        )}
+
         {/* Equipment Strip */}
         <div className="flex flex-wrap gap-1 pt-1 border-t border-stone-100 dark:border-stone-800">
           {equipItems.filter((x) => x.card).length === 0 ? (
             <span className="text-[11px] text-stone-400">无装备</span>
           ) : (
-            equipItems.map(({ label, card }) =>
-              card ? (
+            equipItems.map(({ label, card }) => {
+              if (!card) return null;
+              const canSelectEquip = Boolean(isSelf && selectableCardIds?.has(card.id) && onToggleSelectCard);
+              const isEquipSelected = selectedCardIds.includes(card.id);
+              return (
                 <button
                   key={card.id}
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
+                    if (canSelectEquip) {
+                      onToggleSelectCard?.(card.id);
+                    } else {
+                      onInspectCard?.(card);
+                    }
+                  }}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
                     onInspectCard?.(card);
                   }}
-                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] bg-sky-50 dark:bg-sky-950/60 text-sky-900 dark:text-sky-200 border border-sky-200 dark:border-sky-800 hover:bg-sky-100"
+                  title={
+                    canSelectEquip
+                      ? `点击选择装备牌【${card.displayName}】（${getSuitSymbol(card.suit)}${getRankLabel(card.rank)}）`
+                      : `${card.displayName} (${getSuitSymbol(card.suit)}${getRankLabel(card.rank)})`
+                  }
+                  className={[
+                    'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] border transition-all',
+                    isEquipSelected
+                      ? 'bg-[#8B2626] text-white border-[#8B2626] ring-2 ring-rose-400'
+                      : canSelectEquip
+                        ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-200 border-emerald-400 ring-1 ring-emerald-400/70 cursor-pointer'
+                        : 'bg-sky-50 dark:bg-sky-950/60 text-sky-900 dark:text-sky-200 border-sky-200 dark:border-sky-800 hover:bg-sky-100'
+                  ].join(' ')}
                 >
                   {label === '武' ? (
                     <Sword className="w-3 h-3 shrink-0" />
@@ -182,12 +233,21 @@ export function PlayerSeat({
                     <span className="font-mono text-[10px] opacity-75">{label}</span>
                   )}
                   <span className="font-medium">{card.displayName}</span>
-                  {card.attackRange && (
-                    <span className="text-[10px] opacity-70">({card.attackRange})</span>
-                  )}
+                  <span
+                    className={
+                      isEquipSelected
+                        ? 'text-[10px] font-mono opacity-90'
+                        : card.suit === 'heart' || card.suit === 'diamond'
+                          ? 'text-[10px] font-mono text-red-600 dark:text-red-400'
+                          : 'text-[10px] font-mono opacity-75'
+                    }
+                  >
+                    {getSuitSymbol(card.suit)}
+                    {getRankLabel(card.rank)}
+                  </span>
                 </button>
-              ) : null
-            )
+              );
+            })
           )}
         </div>
 

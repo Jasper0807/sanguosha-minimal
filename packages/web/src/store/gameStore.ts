@@ -30,6 +30,7 @@ interface GameStoreState {
   theme: 'light' | 'dark';
   mode: GameMode;
   deckVariant: DeckVariant;
+  generalPack: 'standard' | 'blank';
   seed: number;
   seats: SeatConfig[];
   hostSettings: HostSettings;
@@ -43,6 +44,7 @@ interface GameStoreState {
   selectedCardIds: number[];
   selectedTargetIds: string[];
   secondaryTargetId: string | null;
+  activeSkillId: string | null;
   serpentSpearMode: boolean;
   woodenOxMode: boolean;
   skipSimilarNullification: boolean;
@@ -59,6 +61,7 @@ interface GameStoreState {
   toggleTheme: () => void;
   setMode: (mode: GameMode) => void;
   setDeckVariant: (variant: DeckVariant) => void;
+  setGeneralPack: (pack: 'standard' | 'blank') => void;
   setSeed: (seed: number) => void;
   randomizeSeed: () => void;
   updateSeat: (index: number, patch: Partial<SeatConfig>) => void;
@@ -74,6 +77,7 @@ interface GameStoreState {
   // Interaction
   toggleSelectCard: (cardId: number) => void;
   toggleSelectTarget: (targetId: string) => void;
+  toggleActiveSkill: (skillId: string) => void;
   toggleSerpentSpearMode: () => void;
   toggleWoodenOxMode: () => void;
   setSkipSimilarNullification: (val: boolean) => void;
@@ -87,6 +91,7 @@ interface GameStoreState {
   respondPlayerCard: (choiceIndex: number) => void;
   respondHarvestCard: (cardId: number) => void;
   respondGeneral: (generalId: string) => void;
+  respondGuanxing: (topCardIds: number[], bottomCardIds: number[]) => void;
   handleTimeout: () => void;
   stepSingleAI: () => boolean;
   switchViewer: (playerId: string) => void;
@@ -163,6 +168,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   theme: 'light',
   mode: '1v1',
   deckVariant: 'junzheng_161',
+  generalPack: 'standard',
   seed: Math.floor(Date.now() % 1000000),
   seats: buildDefaultSeats('1v1'),
   hostSettings: {
@@ -181,6 +187,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   selectedCardIds: [],
   selectedTargetIds: [],
   secondaryTargetId: null,
+  activeSkillId: null,
   serpentSpearMode: false,
   woodenOxMode: false,
   skipSimilarNullification: false,
@@ -203,6 +210,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   },
 
   setDeckVariant: (deckVariant) => set({ deckVariant }),
+
+  setGeneralPack: (generalPack) => set({ generalPack }),
 
   setSeed: (seed) => set({ seed }),
 
@@ -239,6 +248,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     const config: GameConfig = {
       mode: st.mode,
       deckVariant: st.deckVariant,
+      generalPack: st.generalPack,
       seed: st.seed,
       seats: st.seats.map((s, idx) => ({ ...s, id: s.id ?? `p${idx + 1}` })),
       skipGeneralSelection: false,
@@ -257,6 +267,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       selectedCardIds: [],
       selectedTargetIds: [],
       secondaryTargetId: null,
+      activeSkillId: null,
       serpentSpearMode: false,
       woodenOxMode: false,
       skipSimilarNullification: false
@@ -271,6 +282,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       selectedCardIds: [],
       selectedTargetIds: [],
       secondaryTargetId: null,
+      activeSkillId: null,
       serpentSpearMode: false,
       woodenOxMode: false
     }),
@@ -286,15 +298,53 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       selectedCardIds: [],
       selectedTargetIds: [],
       secondaryTargetId: null,
+      activeSkillId: null,
       serpentSpearMode: false,
       woodenOxMode: false
     }),
+
+  toggleActiveSkill: (skillId) => {
+    const st = get();
+    const { engine, view } = st;
+    if (!engine || view?.pendingPrompt?.type !== 'play_action') return;
+    const skill = view.pendingPrompt.usableSkills.find((s) => s.skillId === skillId);
+    if (!skill) return;
+
+    if (skill.needsConfirmOnly) {
+      engine.submit({
+        type: 'play_action',
+        action: { type: 'activate_skill', skillId, cardIds: [], targetIds: [] }
+      });
+      const synced = syncFromEngine(engine, st.viewerId, st.hostSettings.revealAllHands);
+      set({
+        ...synced,
+        selectedCardIds: [],
+        selectedTargetIds: [],
+        secondaryTargetId: null,
+        activeSkillId: null,
+        serpentSpearMode: false,
+        woodenOxMode: false
+      });
+      return;
+    }
+
+    const nextSkillId = st.activeSkillId === skillId ? null : skillId;
+    set({
+      activeSkillId: nextSkillId,
+      serpentSpearMode: false,
+      woodenOxMode: false,
+      selectedCardIds: [],
+      selectedTargetIds: [],
+      secondaryTargetId: null
+    });
+  },
 
   toggleSerpentSpearMode: () => {
     const active = !get().serpentSpearMode;
     set({
       serpentSpearMode: active,
       woodenOxMode: false,
+      activeSkillId: null,
       selectedCardIds: [],
       selectedTargetIds: [],
       secondaryTargetId: null
@@ -306,6 +356,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     set({
       woodenOxMode: active,
       serpentSpearMode: false,
+      activeSkillId: null,
       selectedCardIds: [],
       selectedTargetIds: [],
       secondaryTargetId: null
@@ -320,6 +371,21 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     if (!prompt) return;
 
     if (prompt.type === 'play_action') {
+      if (st.activeSkillId) {
+        const skill = prompt.usableSkills.find((s) => s.skillId === st.activeSkillId);
+        if (!skill || !skill.eligibleCardIds.includes(cardId)) return;
+        const exists = st.selectedCardIds.includes(cardId);
+        if (exists) {
+          set({ selectedCardIds: st.selectedCardIds.filter((id) => id !== cardId) });
+        } else if (skill.cardMax <= 1) {
+          set({ selectedCardIds: [cardId] });
+        } else if (st.selectedCardIds.length < skill.cardMax) {
+          set({ selectedCardIds: [...st.selectedCardIds, cardId] });
+        } else {
+          set({ selectedCardIds: [...st.selectedCardIds.slice(1), cardId] });
+        }
+        return;
+      }
       if (st.serpentSpearMode) {
         const exists = st.selectedCardIds.includes(cardId);
         const next = exists
@@ -368,6 +434,21 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     if (!prompt) return;
 
     if (prompt.type === 'play_action') {
+      if (st.activeSkillId) {
+        const skill = prompt.usableSkills.find((s) => s.skillId === st.activeSkillId);
+        if (!skill || !skill.eligibleTargetIds.includes(targetId)) return;
+        const exists = st.selectedTargetIds.includes(targetId);
+        if (exists) {
+          set({ selectedTargetIds: st.selectedTargetIds.filter((id) => id !== targetId) });
+        } else if (skill.targetMax <= 1) {
+          set({ selectedTargetIds: [targetId] });
+        } else if (st.selectedTargetIds.length < skill.targetMax) {
+          set({ selectedTargetIds: [...st.selectedTargetIds, targetId] });
+        } else {
+          set({ selectedTargetIds: [...st.selectedTargetIds.slice(1), targetId] });
+        }
+        return;
+      }
       if (st.woodenOxMode) {
         set({
           selectedTargetIds: st.selectedTargetIds[0] === targetId ? [] : [targetId]
@@ -441,7 +522,27 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     let response: PlayerResponse | null = null;
 
     if (prompt.type === 'play_action') {
-      if (st.serpentSpearMode) {
+      if (st.activeSkillId) {
+        const skill = prompt.usableSkills.find((s) => s.skillId === st.activeSkillId);
+        if (!skill) return;
+        if (
+          st.selectedCardIds.length < skill.cardMin ||
+          st.selectedCardIds.length > skill.cardMax ||
+          st.selectedTargetIds.length < skill.targetMin ||
+          st.selectedTargetIds.length > skill.targetMax
+        ) {
+          return;
+        }
+        response = {
+          type: 'play_action',
+          action: {
+            type: 'activate_skill',
+            skillId: skill.skillId,
+            cardIds: st.selectedCardIds,
+            targetIds: st.selectedTargetIds
+          }
+        };
+      } else if (st.serpentSpearMode) {
         if (st.selectedCardIds.length !== 2 || st.selectedTargetIds.length !== 1) return;
         response = {
           type: 'play_action',
@@ -504,6 +605,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       selectedCardIds: [],
       selectedTargetIds: [],
       secondaryTargetId: null,
+      activeSkillId: null,
       serpentSpearMode: false,
       woodenOxMode: false,
       skipSimilarNullification: false
@@ -525,7 +627,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       ...synced,
       selectedCardIds: [],
       selectedTargetIds: [],
-      secondaryTargetId: null
+      secondaryTargetId: null,
+      activeSkillId: null
     });
   },
 
@@ -534,7 +637,12 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     const { engine, view } = st;
     if (!engine || !view?.pendingPrompt) return;
 
-    if (view.pendingPrompt.type === 'play_action' && !st.serpentSpearMode && !st.woodenOxMode) {
+    if (
+      view.pendingPrompt.type === 'play_action' &&
+      !st.serpentSpearMode &&
+      !st.woodenOxMode &&
+      !st.activeSkillId
+    ) {
       const info = st.playableInfos.find((i) => i.cardId === cardId);
       if (info && !info.needsTarget) {
         engine.submit({
@@ -576,6 +684,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     if (
       st.selectedCardIds.length > 0 ||
       st.selectedTargetIds.length > 0 ||
+      st.activeSkillId ||
       st.serpentSpearMode ||
       st.woodenOxMode
     ) {
@@ -610,6 +719,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       selectedCardIds: [],
       selectedTargetIds: [],
       secondaryTargetId: null,
+      activeSkillId: null,
       serpentSpearMode: false,
       woodenOxMode: false
     });
@@ -643,6 +753,14 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     const st = get();
     if (!st.engine || st.view?.pendingPrompt?.type !== 'choose_general') return;
     st.engine.submit({ type: 'choose_general', generalId });
+    const synced = syncFromEngine(st.engine, st.viewerId, st.hostSettings.revealAllHands);
+    set({ ...synced });
+  },
+
+  respondGuanxing: (topCardIds, bottomCardIds) => {
+    const st = get();
+    if (!st.engine || st.view?.pendingPrompt?.type !== 'choose_guanxing') return;
+    st.engine.submit({ type: 'choose_guanxing', topCardIds, bottomCardIds });
     const synced = syncFromEngine(st.engine, st.viewerId, st.hostSettings.revealAllHands);
     set({ ...synced });
   },
@@ -684,6 +802,13 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       case 'choose_general':
         fallback = { type: 'choose_general', generalId: p.candidates[0].id };
         break;
+      case 'choose_guanxing':
+        fallback = {
+          type: 'choose_guanxing',
+          topCardIds: p.cards.map((c) => c.id),
+          bottomCardIds: []
+        };
+        break;
     }
     engine.submit(fallback);
     const synced = syncFromEngine(engine, st.viewerId, st.hostSettings.revealAllHands);
@@ -692,6 +817,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       selectedCardIds: [],
       selectedTargetIds: [],
       secondaryTargetId: null,
+      activeSkillId: null,
       serpentSpearMode: false,
       woodenOxMode: false
     });
@@ -727,6 +853,12 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
               };
             case 'choose_general':
               return { type: 'choose_general', generalId: prompt.candidates[0].id };
+            case 'choose_guanxing':
+              return {
+                type: 'choose_guanxing',
+                topCardIds: prompt.cards.map((c) => c.id),
+                bottomCardIds: []
+              };
             case 'choose_target':
               return {
                 type: 'choose_target',

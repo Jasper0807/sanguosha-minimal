@@ -247,9 +247,24 @@ export function decideAIAction(engine: GameEngine, playerId: string): PlayerResp
 
   switch (prompt.type) {
     case 'choose_general': {
-      // Pick highest maxHp candidate deterministically
-      const sorted = [...prompt.candidates].sort((a, b) => b.maxHp - a.maxHp);
+      // Pick highest maxHp / skill count candidate deterministically
+      const sorted = [...prompt.candidates].sort(
+        (a, b) => b.maxHp + b.skills.length * 0.5 - (a.maxHp + a.skills.length * 0.5)
+      );
       return { type: 'choose_general', generalId: sorted[0].id };
+    }
+
+    case 'choose_guanxing': {
+      // Keep top 2 best cards on top of draw pile, push weaker cards to bottom
+      const sorted = [...prompt.cards].sort(
+        (a, b) => cardKeepValue(b, ai) - cardKeepValue(a, ai)
+      );
+      const keepTopCount = Math.min(2, sorted.length);
+      return {
+        type: 'choose_guanxing',
+        topCardIds: sorted.slice(0, keepTopCount).map((c) => c.id),
+        bottomCardIds: sorted.slice(keepTopCount).map((c) => c.id)
+      };
     }
 
     case 'choose_harvest_card': {
@@ -283,26 +298,102 @@ export function decideAIAction(engine: GameEngine, playerId: string): PlayerResp
     case 'choose_option': {
       switch (prompt.reason) {
         case 'eight_trigrams':
-          return { type: 'choose_option', optionId: 'yes' };
         case 'double_swords':
         case 'kylin_bow':
+        case 'fan':
+        case 'jianxiong':
+        case 'fankui':
+        case 'tiandu':
+        case 'yiji':
+        case 'luoshen':
+        case 'guanxing':
+        case 'tieqi':
+        case 'jizhi':
+        case 'keji':
+        case 'yingzi':
+        case 'lianying':
+        case 'xiaoji':
+        case 'biyue':
+        case 'hujia':
+        case 'jijiang':
           return { type: 'choose_option', optionId: 'yes' };
+        case 'ganglie': {
+          const enemyExists = state.players.some(
+            (p) => p.alive && prompt.message.includes(p.name) && evaluateRelation(state, ai, p) < 0
+          );
+          return { type: 'choose_option', optionId: enemyExists ? 'yes' : 'no' };
+        }
+        case 'ganglie_choice':
+          return {
+            type: 'choose_option',
+            optionId: ai.hp <= 2 && ai.hand.length >= 2 ? 'discard' : 'damage'
+          };
+        case 'luoyi': {
+          const hasSlashOrDuel = getUsableCards(ai).some(
+            (c) => isSlashCardName(c.name) || c.name === 'duel'
+          );
+          return { type: 'choose_option', optionId: hasSlashOrDuel ? 'yes' : 'no' };
+        }
+        case 'liuli': {
+          const hasNonPeachCard = getUsableCards(ai).some((c) => c.name !== 'peach');
+          return {
+            type: 'choose_option',
+            optionId: ai.hp <= 2 && hasNonPeachCard ? 'yes' : 'no'
+          };
+        }
+        case 'wangzun': {
+          const lord = state.players.find((p) => p.role === 'lord');
+          const antiLord = lord ? evaluateRelation(state, ai, lord) < 0 : false;
+          return { type: 'choose_option', optionId: antiLord ? 'yes' : 'no' };
+        }
+        case 'yaowu':
+          return {
+            type: 'choose_option',
+            optionId: ai.hp < ai.maxHp ? 'heal' : 'draw'
+          };
+        case 'fanjian_suit': {
+          const suits = ['spade', 'heart', 'club', 'diamond'];
+          return {
+            type: 'choose_option',
+            optionId: suits[engine.rng.nextInt(suits.length)]
+          };
+        }
         case 'double_swords_choice':
           return {
             type: 'choose_option',
             optionId: ai.hand.length >= 3 ? 'discard' : 'let_draw'
           };
         case 'ice_sword':
-          // Use Ice Sword to strip cards rather than dealing 1 damage unless enemy is 1 HP
           return { type: 'choose_option', optionId: 'no' };
-        case 'fan':
-          return { type: 'choose_option', optionId: 'yes' };
         default:
           return { type: 'choose_option', optionId: prompt.options[0].id };
       }
     }
 
     case 'choose_target': {
+      if (prompt.reason === 'tuxi') {
+        const enemies = prompt.eligibleTargetIds
+          .map((id) => engine.getPlayer(id))
+          .filter((p) => evaluateRelation(state, ai, p) < 0)
+          .sort((a, b) => b.hand.length - a.hand.length)
+          .slice(0, prompt.maxCount)
+          .map((p) => p.id);
+        if (enemies.length > 0) {
+          return { type: 'choose_target', targetIds: enemies };
+        }
+        return { type: 'choose_target', targetIds: [], cancelled: true };
+      }
+      if (prompt.reason === 'yiji_give') {
+        // Prefer giving to wounded/low-hand ally or self
+        const allies = prompt.eligibleTargetIds
+          .map((id) => engine.getPlayer(id))
+          .filter((p) => evaluateRelation(state, ai, p) > 0)
+          .sort((a, b) => a.hand.length - b.hand.length);
+        return {
+          type: 'choose_target',
+          targetIds: [allies[0]?.id ?? ai.id]
+        };
+      }
       const enemy = pickBestEnemy(state, ai, prompt.eligibleTargetIds);
       if (enemy) {
         return { type: 'choose_target', targetIds: [enemy.id] };
@@ -442,6 +533,27 @@ function decideChooseCard(
       return { type: 'choose_card', cardIds: [], cancelled: true };
     }
 
+    case 'general_skill': {
+      if (prompt.optional) {
+        // Optional skill card prompt (e.g., 鬼才, 激将 ally assist, 流离 discard)
+        if (prompt.message.includes('鬼才')) {
+          return { type: 'choose_card', cardIds: [], cancelled: true };
+        }
+        if (prompt.message.includes('激将')) {
+          const lord = state.players.find((p) => p.role === 'lord');
+          if (lord && evaluateRelation(state, ai, lord) > 0 && eligible.length > 0) {
+            return { type: 'choose_card', cardIds: [eligible[0].id] };
+          }
+          return { type: 'choose_card', cardIds: [], cancelled: true };
+        }
+      }
+      const sorted = [...eligible].sort((a, b) => cardKeepValue(a, ai) - cardKeepValue(b, ai));
+      return {
+        type: 'choose_card',
+        cardIds: sorted.slice(0, prompt.minCount).map((c) => c.id)
+      };
+    }
+
     case 'discard_phase':
     case 'discard_double_swords':
     default: {
@@ -459,6 +571,172 @@ function decidePlayPhase(engine: GameEngine, ai: PlayerState): PlayerResponse {
   const playable = getAllPlayableCards(state, ai.id, engine.modifiers);
   const usable = getUsableCards(ai);
   const findCard = (id: number) => usable.find((c) => c.id === id);
+
+  // 0. Active General Skills (high-value, strictly bounded / no loops!)
+  const playPrompt = state.pendingPrompt;
+  if (playPrompt?.type === 'play_action' && playPrompt.usableSkills.length > 0) {
+    const byId = (sid: string) => playPrompt.usableSkills.find((s) => s.skillId === sid);
+
+    // 孙权制衡: discard low-value cards once per turn
+    const zhiheng = byId('zhiheng');
+    if (zhiheng) {
+      const toDiscard = zhiheng.eligibleCardIds.filter((id) => {
+        const c = findCard(id);
+        return c ? cardKeepValue(c, ai) < 62 : false;
+      });
+      if (toDiscard.length >= 1) {
+        return {
+          type: 'play_action',
+          action: { type: 'activate_skill', skillId: 'zhiheng', cardIds: toDiscard }
+        };
+      }
+    }
+
+    // 华佗青囊: heal wounded ally or self
+    const qingnang = byId('qingnang');
+    if (qingnang) {
+      const allyTarget = qingnang.eligibleTargetIds
+        .map((id) => engine.getPlayer(id))
+        .filter((p) => evaluateRelation(state, ai, p) > 0)
+        .sort((a, b) => a.hp - b.hp)[0];
+      if (allyTarget) {
+        const lowCard = [...ai.hand].sort((a, b) => cardKeepValue(a, ai) - cardKeepValue(b, ai))[0];
+        if (lowCard) {
+          return {
+            type: 'play_action',
+            action: {
+              type: 'activate_skill',
+              skillId: 'qingnang',
+              cardIds: [lowCard.id],
+              targetIds: [allyTarget.id]
+            }
+          };
+        }
+      }
+    }
+
+    // 孙尚香结姻: heal wounded male ally + self when wounded or spare cards
+    const jieyin = byId('jieyin');
+    if (jieyin && ai.hand.length >= 2) {
+      const maleAlly = jieyin.eligibleTargetIds
+        .map((id) => engine.getPlayer(id))
+        .filter((p) => evaluateRelation(state, ai, p) > 0)
+        .sort((a, b) => a.hp - b.hp)[0];
+      if (maleAlly && (ai.hp < ai.maxHp || ai.hand.length >= 4)) {
+        const sorted = [...ai.hand].sort((a, b) => cardKeepValue(a, ai) - cardKeepValue(b, ai));
+        return {
+          type: 'play_action',
+          action: {
+            type: 'activate_skill',
+            skillId: 'jieyin',
+            cardIds: [sorted[0].id, sorted[1].id],
+            targetIds: [maleAlly.id]
+          }
+        };
+      }
+    }
+
+    // 黄盖苦肉: use when HP >= 3 and hand < 5
+    const kurou = byId('kurou');
+    if (kurou && ai.hp >= 3 && ai.hand.length < 5) {
+      return {
+        type: 'play_action',
+        action: { type: 'activate_skill', skillId: 'kurou' }
+      };
+    }
+
+    // 周瑜反间: target best enemy
+    const fanjian = byId('fanjian');
+    if (fanjian) {
+      const enemy = pickBestEnemy(state, ai, fanjian.eligibleTargetIds);
+      if (enemy) {
+        return {
+          type: 'play_action',
+          action: { type: 'activate_skill', skillId: 'fanjian', targetIds: [enemy.id] }
+        };
+      }
+    }
+
+    // 貂蝉离间: pit two enemies against each other
+    const lijian = byId('lijian');
+    if (lijian) {
+      const enemies = lijian.eligibleTargetIds
+        .map((id) => engine.getPlayer(id))
+        .filter((p) => evaluateRelation(state, ai, p) < 0);
+      if (enemies.length >= 2) {
+        const lowCard = lijian.eligibleCardIds[0];
+        return {
+          type: 'play_action',
+          action: {
+            type: 'activate_skill',
+            skillId: 'lijian',
+            cardIds: [lowCard],
+            targetIds: [enemies[0].id, enemies[1].id]
+          }
+        };
+      }
+    }
+
+    // 刘备仁德: give 2 low-value cards to ally when wounded & haven't healed yet
+    const rende = byId('rende');
+    if (rende && !ai.marks['rende_healed'] && ai.hp < ai.maxHp && ai.hand.length >= 2) {
+      const ally = rende.eligibleTargetIds
+        .map((id) => engine.getPlayer(id))
+        .filter((p) => evaluateRelation(state, ai, p) > 0)[0];
+      if (ally) {
+        const sorted = [...ai.hand].sort((a, b) => cardKeepValue(a, ai) - cardKeepValue(b, ai));
+        return {
+          type: 'play_action',
+          action: {
+            type: 'activate_skill',
+            skillId: 'rende',
+            cardIds: [sorted[0].id, sorted[1].id],
+            targetIds: [ally.id]
+          }
+        };
+      }
+    }
+
+    // 大乔国色: turn a low-value diamond hand card into Indulgence on enemy
+    const guose = byId('guose');
+    if (guose) {
+      const enemy = pickBestEnemy(state, ai, guose.eligibleTargetIds, (t) => t.hand.length * 8);
+      const lowDiamond = ai.hand
+        .filter((c) => guose.eligibleCardIds.includes(c.id) && cardKeepValue(c, ai) < 75)
+        .sort((a, b) => cardKeepValue(a, ai) - cardKeepValue(b, ai))[0];
+      if (enemy && lowDiamond) {
+        return {
+          type: 'play_action',
+          action: {
+            type: 'activate_skill',
+            skillId: 'guose',
+            cardIds: [lowDiamond.id],
+            targetIds: [enemy.id]
+          }
+        };
+      }
+    }
+
+    // 甘宁奇袭: turn a low-value black hand card into Dismantle on enemy
+    const qixi = byId('qixi');
+    if (qixi) {
+      const enemy = pickBestEnemy(state, ai, qixi.eligibleTargetIds);
+      const lowBlack = ai.hand
+        .filter((c) => qixi.eligibleCardIds.includes(c.id) && cardKeepValue(c, ai) < 62)
+        .sort((a, b) => cardKeepValue(a, ai) - cardKeepValue(b, ai))[0];
+      if (enemy && lowBlack) {
+        return {
+          type: 'play_action',
+          action: {
+            type: 'activate_skill',
+            skillId: 'qixi',
+            cardIds: [lowBlack.id],
+            targetIds: [enemy.id]
+          }
+        };
+      }
+    }
+  }
 
   // 1. Heal self with Peach immediately when wounded
   const peachInfo = playable.find((p) => findCard(p.cardId)?.name === 'peach');

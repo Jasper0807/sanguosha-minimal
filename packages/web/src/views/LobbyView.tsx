@@ -27,12 +27,14 @@ export function LobbyView({
     theme,
     mode,
     deckVariant,
+    generalPack,
     seed,
     seats,
     hostSettings,
     toggleTheme,
     setMode,
     setDeckVariant,
+    setGeneralPack,
     setSeed,
     randomizeSeed,
     updateSeat,
@@ -112,7 +114,7 @@ export function LobbyView({
 
       {/* Main Content */}
       <main className="flex-1 max-w-5xl w-full mx-auto px-6 py-8 grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Column: Mode + Deck + Seats */}
+        {/* Left Column: Mode + Deck + General Pack + Seats */}
         <div className="lg:col-span-7 space-y-6">
           {/* Mode Picker */}
           <section className="rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-[#1E2128] p-5 shadow-sm">
@@ -153,43 +155,82 @@ export function LobbyView({
             </div>
           </section>
 
-          {/* Deck Variant */}
-          <section className="rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-[#1E2128] p-5 shadow-sm">
-            <div className="text-sm font-bold mb-3">牌堆配置</div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => setDeckVariant('standard_ex')}
-                className={[
-                  'text-left rounded-lg p-3 border-2 transition-all',
-                  deckVariant === 'standard_ex'
-                    ? 'border-stone-900 dark:border-amber-400 bg-stone-50 dark:bg-stone-800'
-                    : 'border-stone-200 dark:border-stone-700'
-                ].join(' ')}
-              >
-                <div className="font-bold text-sm">标准 + EX（108 张）</div>
-                <div className="text-[11px] text-stone-500 mt-0.5">
-                  标准 104 + 寒冰剑/仁王盾/闪电/无懈 EX 4 张
-                </div>
-              </button>
+          {/* Deck Variant & General Pack */}
+          <section className="rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-[#1E2128] p-5 shadow-sm space-y-4">
+            <div>
+              <div className="text-sm font-bold mb-2.5">牌堆配置</div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setDeckVariant('standard_ex')}
+                  className={[
+                    'text-left rounded-lg p-3 border-2 transition-all',
+                    deckVariant === 'standard_ex'
+                      ? 'border-stone-900 dark:border-amber-400 bg-stone-50 dark:bg-stone-800'
+                      : 'border-stone-200 dark:border-stone-700'
+                  ].join(' ')}
+                >
+                  <div className="font-bold text-sm">标准 + EX（108 张）</div>
+                  <div className="text-[11px] text-stone-500 mt-0.5">
+                    标准 104 + 寒冰剑/仁王盾/闪电/无懈 EX 4 张
+                  </div>
+                </button>
 
-              <button
-                type="button"
-                disabled={!availableDecks.includes('junzheng_161')}
-                onClick={() => setDeckVariant('junzheng_161')}
-                className={[
-                  'text-left rounded-lg p-3 border-2 transition-all',
-                  deckVariant === 'junzheng_161'
-                    ? 'border-stone-900 dark:border-amber-400 bg-stone-50 dark:bg-stone-800'
-                    : 'border-stone-200 dark:border-stone-700',
-                  !availableDecks.includes('junzheng_161') ? 'opacity-45 cursor-not-allowed' : ''
-                ].join(' ')}
-              >
-                <div className="font-bold text-sm">军争篇全量（161 张）</div>
-                <div className="text-[11px] text-stone-500 mt-0.5">
-                  108 + 军争 52（火雷杀/酒/铁索/火攻/藤甲/狮子）+ 木牛流马
-                </div>
-              </button>
+                <button
+                  type="button"
+                  disabled={!availableDecks.includes('junzheng_161')}
+                  onClick={() => setDeckVariant('junzheng_161')}
+                  className={[
+                    'text-left rounded-lg p-3 border-2 transition-all',
+                    deckVariant === 'junzheng_161'
+                      ? 'border-stone-900 dark:border-amber-400 bg-stone-50 dark:bg-stone-800'
+                      : 'border-stone-200 dark:border-stone-700',
+                    !availableDecks.includes('junzheng_161') ? 'opacity-45 cursor-not-allowed' : ''
+                  ].join(' ')}
+                >
+                  <div className="font-bold text-sm">军争篇全量（161 张）</div>
+                  <div className="text-[11px] text-stone-500 mt-0.5">
+                    108 + 军争 52（火雷杀/酒/铁索/火攻/藤甲/狮子）+ 木牛流马
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-stone-200 dark:border-stone-800">
+              <div className="text-sm font-bold mb-2.5">武将包选择</div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setGeneralPack('standard')}
+                  className={[
+                    'text-left rounded-lg p-3 border-2 transition-all',
+                    generalPack === 'standard'
+                      ? 'border-stone-900 dark:border-amber-400 bg-stone-50 dark:bg-stone-800'
+                      : 'border-stone-200 dark:border-stone-700'
+                  ].join(' ')}
+                >
+                  <div className="font-bold text-sm">标准包（OL 27 武将）</div>
+                  <div className="text-[11px] text-stone-500 mt-0.5">
+                    魏7 / 蜀7 / 吴8 / 群5 · 含 3 主公技、华雄耀武与袁术妄尊同疾
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setGeneralPack('blank')}
+                  className={[
+                    'text-left rounded-lg p-3 border-2 transition-all',
+                    generalPack === 'blank'
+                      ? 'border-stone-900 dark:border-amber-400 bg-stone-50 dark:bg-stone-800'
+                      : 'border-stone-200 dark:border-stone-700'
+                  ].join(' ')}
+                >
+                  <div className="font-bold text-sm">白板测试将</div>
+                  <div className="text-[11px] text-stone-500 mt-0.5">
+                    纯牌面无技能对抗（适合规则基础测试）
+                  </div>
+                </button>
+              </div>
             </div>
           </section>
 

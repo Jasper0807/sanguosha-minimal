@@ -8,6 +8,7 @@ import {
   EyeOff,
   Moon,
   ScrollText,
+  Sparkles,
   Sun,
   Swords,
   Package
@@ -37,6 +38,7 @@ export function GameTableView() {
     selectedCardIds,
     selectedTargetIds,
     secondaryTargetId,
+    activeSkillId,
     serpentSpearMode,
     woodenOxMode,
     skipSimilarNullification,
@@ -46,6 +48,7 @@ export function GameTableView() {
     returnToLobby,
     toggleSelectCard,
     toggleSelectTarget,
+    toggleActiveSkill,
     toggleSerpentSpearMode,
     toggleWoodenOxMode,
     setSkipSimilarNullification,
@@ -58,6 +61,7 @@ export function GameTableView() {
     respondPlayerCard,
     respondHarvestCard,
     respondGeneral,
+    respondGuanxing,
     handleTimeout,
     stepSingleAI,
     setInspectCard,
@@ -121,6 +125,11 @@ export function GameTableView() {
     return ordered;
   }, [view, selfPlayer]);
 
+  const activeSkillInfo = useMemo(() => {
+    if (prompt?.type !== 'play_action' || !activeSkillId) return null;
+    return prompt.usableSkills.find((s) => s.skillId === activeSkillId) ?? null;
+  }, [prompt, activeSkillId]);
+
   // Determine which targets are currently selectable
   const selectableTargetIds = useMemo(() => {
     if (!prompt || !engine || !selfPlayer || prompt.playerId !== selfPlayer.id) {
@@ -130,6 +139,9 @@ export function GameTableView() {
       return new Set(prompt.eligibleTargetIds);
     }
     if (prompt.type === 'play_action') {
+      if (activeSkillInfo) {
+        return new Set(activeSkillInfo.eligibleTargetIds);
+      }
       if (serpentSpearMode) {
         return new Set(
           engine.state.players
@@ -166,6 +178,7 @@ export function GameTableView() {
     prompt,
     engine,
     selfPlayer,
+    activeSkillInfo,
     serpentSpearMode,
     woodenOxMode,
     selectedCardIds,
@@ -174,13 +187,23 @@ export function GameTableView() {
   ]);
 
   const selectedPlayInfo = useMemo(() => {
-    if (prompt?.type !== 'play_action' || selectedCardIds.length !== 1) return null;
+    if (prompt?.type !== 'play_action' || activeSkillInfo || selectedCardIds.length !== 1) {
+      return null;
+    }
     return playableInfos.find((i) => i.cardId === selectedCardIds[0]) ?? null;
-  }, [prompt, selectedCardIds, playableInfos]);
+  }, [prompt, activeSkillInfo, selectedCardIds, playableInfos]);
 
   const canConfirm = useMemo(() => {
     if (!prompt || !selfPlayer || prompt.playerId !== selfPlayer.id) return false;
     if (prompt.type === 'play_action') {
+      if (activeSkillInfo) {
+        return (
+          selectedCardIds.length >= activeSkillInfo.cardMin &&
+          selectedCardIds.length <= activeSkillInfo.cardMax &&
+          selectedTargetIds.length >= activeSkillInfo.targetMin &&
+          selectedTargetIds.length <= activeSkillInfo.targetMax
+        );
+      }
       if (serpentSpearMode) {
         return selectedCardIds.length === 2 && selectedTargetIds.length === 1;
       }
@@ -207,6 +230,7 @@ export function GameTableView() {
   }, [
     prompt,
     selfPlayer,
+    activeSkillInfo,
     serpentSpearMode,
     woodenOxMode,
     selectedCardIds,
@@ -260,20 +284,29 @@ export function GameTableView() {
     respondOption
   ]);
 
+  const selectableCardIdSet = useMemo(() => {
+    const out = new Set<number>();
+    if (!prompt || !selfPlayer || prompt.playerId !== selfPlayer.id) return out;
+    if (prompt.type === 'play_action') {
+      if (activeSkillInfo) {
+        for (const id of activeSkillInfo.eligibleCardIds) out.add(id);
+      } else if (serpentSpearMode) {
+        for (const c of selfPlayer.hand ?? []) out.add(c.id);
+        for (const c of selfPlayer.woodenOxCards ?? []) out.add(c.id);
+      } else if (woodenOxMode) {
+        for (const c of selfPlayer.hand ?? []) out.add(c.id);
+      } else {
+        for (const id of prompt.playableCardIds) out.add(id);
+      }
+    } else if (prompt.type === 'choose_card') {
+      for (const id of prompt.eligibleCardIds) out.add(id);
+    }
+    return out;
+  }, [prompt, selfPlayer, activeSkillInfo, serpentSpearMode, woodenOxMode]);
+
   if (!view || !selfPlayer || !engine) return null;
 
-  const isCardSelectable = (cardId: number): boolean => {
-    if (!prompt || prompt.playerId !== selfPlayer.id) return false;
-    if (prompt.type === 'play_action') {
-      if (serpentSpearMode) return true;
-      if (woodenOxMode) return Boolean(selfPlayer.hand?.some((c) => c.id === cardId));
-      return prompt.playableCardIds.includes(cardId);
-    }
-    if (prompt.type === 'choose_card') {
-      return prompt.eligibleCardIds.includes(cardId);
-    }
-    return false;
-  };
+  const isCardSelectable = (cardId: number): boolean => selectableCardIdSet.has(cardId);
 
   const handleExport = () => {
     const json = exportReplayJson();
@@ -488,6 +521,17 @@ export function GameTableView() {
                       ? prompt.message
                       : '结算中...'}
                 </div>
+                {activeSkillInfo && (
+                  <span className="text-[11px] font-medium text-amber-800 dark:text-amber-300">
+                    【{activeSkillInfo.name}】{activeSkillInfo.description}
+                    {activeSkillInfo.cardMax > 0
+                      ? ` · 已选牌 ${selectedCardIds.length}/${activeSkillInfo.cardMin === activeSkillInfo.cardMax ? activeSkillInfo.cardMax : `${activeSkillInfo.cardMin}~${activeSkillInfo.cardMax}`}`
+                      : ''}
+                    {activeSkillInfo.targetMax > 0
+                      ? ` · 已选目标 ${selectedTargetIds.length}/${activeSkillInfo.targetMin === activeSkillInfo.targetMax ? activeSkillInfo.targetMax : `${activeSkillInfo.targetMin}~${activeSkillInfo.targetMax}`}`
+                      : ''}
+                  </span>
+                )}
                 {selectedPlayInfo?.secondaryTargetsByPrimary && (
                   <span className="text-[11px] font-medium text-sky-700 dark:text-sky-300">
                     {selectedTargetIds.length === 0
@@ -533,7 +577,7 @@ export function GameTableView() {
           {/* Bottom Self Operation Dock */}
           <div className="shrink-0 border-t border-stone-300 dark:border-stone-800 bg-white/95 dark:bg-[#1B1E24] p-3">
             <div className="max-w-7xl mx-auto flex flex-col lg:flex-row items-stretch gap-3">
-              {/* Left: Self Seat Summary + Active Equipment Buttons */}
+              {/* Left: Self Seat Summary + Active General & Equipment Skill Buttons */}
               <div className="lg:w-72 shrink-0 flex flex-col gap-2">
                 <PlayerSeat
                   player={selfPlayer}
@@ -542,16 +586,43 @@ export function GameTableView() {
                   selectable={selectableTargetIds.has(selfPlayer.id)}
                   selected={selectedTargetIds.includes(selfPlayer.id)}
                   secondarySelected={secondaryTargetId === selfPlayer.id}
+                  selectableCardIds={selectableCardIdSet}
+                  selectedCardIds={selectedCardIds}
                   onSelect={() => toggleSelectTarget(selfPlayer.id)}
+                  onToggleSelectCard={toggleSelectCard}
                   onInspectCard={setInspectCard}
                 />
 
-                {/* Active Equip Skills Bar (丈八蛇矛 / 木牛流马) */}
+                {/* Active General Skills + Equip Skills Bar */}
                 {isPromptForSelf &&
                   ((prompt?.type === 'play_action' &&
-                    (prompt.canUseSerpentSpear || prompt.canUseWoodenOx)) ||
+                    (prompt.usableSkills.length > 0 ||
+                      prompt.canUseSerpentSpear ||
+                      prompt.canUseWoodenOx)) ||
                     (prompt?.type === 'choose_card' && prompt.canUseSerpentSpear)) && (
                     <div className="flex flex-wrap gap-1.5">
+                      {prompt.type === 'play_action' &&
+                        prompt.usableSkills.map((sk) => {
+                          const isActive = activeSkillId === sk.skillId;
+                          return (
+                            <button
+                              key={sk.skillId}
+                              type="button"
+                              onClick={() => toggleActiveSkill(sk.skillId)}
+                              title={sk.description}
+                              className={[
+                                'inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold border transition-colors',
+                                isActive
+                                  ? 'bg-amber-600 text-white border-amber-600 shadow-sm'
+                                  : 'bg-amber-50 dark:bg-amber-950/60 text-amber-900 dark:text-amber-200 border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/60'
+                              ].join(' ')}
+                            >
+                              <Sparkles className="w-3.5 h-3.5" />
+                              {sk.name}
+                            </button>
+                          );
+                        })}
+
                       {((prompt.type === 'play_action' && prompt.canUseSerpentSpear) ||
                         (prompt.type === 'choose_card' && prompt.canUseSerpentSpear)) && (
                         <button
@@ -657,11 +728,13 @@ export function GameTableView() {
                       : 'bg-stone-200 dark:bg-stone-800 text-stone-400 cursor-not-allowed'
                   ].join(' ')}
                 >
-                  {woodenOxMode
-                    ? selectedTargetIds.length > 0
-                      ? '扣置并转移木牛'
-                      : '仅扣置手牌'
-                    : '确认 (Enter)'}
+                  {activeSkillInfo
+                    ? `发动【${activeSkillInfo.name}】`
+                    : woodenOxMode
+                      ? selectedTargetIds.length > 0
+                        ? '扣置并转移木牛'
+                        : '仅扣置手牌'
+                      : '确认 (Enter)'}
                 </button>
 
                 {selectedPlayInfo?.canRecast && isPromptForSelf && (
@@ -676,6 +749,7 @@ export function GameTableView() {
 
                 {isPromptForSelf &&
                   (selectedCardIds.length > 0 ||
+                    activeSkillId ||
                     serpentSpearMode ||
                     woodenOxMode ||
                     (prompt?.type === 'choose_card' && prompt.optional) ||
@@ -685,7 +759,10 @@ export function GameTableView() {
                       onClick={cancelPromptOrSelection}
                       className="w-full py-2 rounded-lg text-xs font-semibold border border-stone-300 dark:border-stone-600 hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors"
                     >
-                      {selectedCardIds.length > 0 || serpentSpearMode || woodenOxMode
+                      {selectedCardIds.length > 0 ||
+                      activeSkillId ||
+                      serpentSpearMode ||
+                      woodenOxMode
                         ? '取消选择 (Esc)'
                         : '跳过 / 不响应 (Esc)'}
                     </button>
@@ -714,7 +791,7 @@ export function GameTableView() {
         />
       </div>
 
-      {/* Modal Prompts (Options / Dismantle-Snatch / Harvest / General Pick) */}
+      {/* Modal Prompts (Options / Dismantle-Snatch / Harvest / General Pick / Guanxing) */}
       {isPromptForSelf && (
         <ActionModal
           prompt={prompt}
@@ -722,6 +799,7 @@ export function GameTableView() {
           onChoosePlayerCard={respondPlayerCard}
           onChooseHarvestCard={respondHarvestCard}
           onChooseGeneral={respondGeneral}
+          onChooseGuanxing={respondGuanxing}
           onInspectCard={setInspectCard}
         />
       )}

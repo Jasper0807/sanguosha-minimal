@@ -783,6 +783,8 @@ describe('Phase 1: All Standard + EX Weapons and Armors', () => {
         resp = { type: 'choose_player_card', choiceIndex: 0 };
       } else if (prompt.type === 'choose_harvest_card') {
         resp = { type: 'choose_harvest_card', cardId: prompt.pool.find((x) => !x.takenBy)!.card.id };
+      } else if (prompt.type === 'choose_guanxing') {
+        resp = { type: 'choose_guanxing', topCardIds: prompt.cards.map((c) => c.id), bottomCardIds: [] };
       } else {
         resp = { type: 'choose_target', targetIds: prompt.eligibleTargetIds.slice(0, prompt.minCount) };
       }
