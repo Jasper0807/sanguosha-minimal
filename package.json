@@ -1,0 +1,16 @@
+{
+  "name": "sanguosha-minimal",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --filter @sgs/web dev",
+    "build": "pnpm -r build",
+    "test": "pnpm --filter @sgs/engine test",
+    "test:coverage": "pnpm --filter @sgs/engine test:coverage",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}
