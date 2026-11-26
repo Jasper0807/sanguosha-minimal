@@ -1,5 +1,7 @@
 # 极简三国杀网页版（Sanguosha Minimal Web）
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Jasper0807/sanguosha-minimal)
+
 一款**零美术负担、高操作效率、严格对齐三国杀 OL 现行规则**的极简网页版三国杀，支持**单机人机 AI** 与**房间链接线上实时 PvP**，完整内置 **161 张军争牌堆**与 **89 位三国杀 OL 武将**。
 
 ---
@@ -46,8 +48,8 @@ sanguosha-minimal/
 │   ├── rules-checklist.md   # 161 张牌堆与全部 89 位 OL 武将核对基准
 │   └── online-pvp-spec.md   # 线上房间链接 PvP 协议与防作弊架构设计
 ├── Dockerfile           # 一键构建前后端同源生产镜像
-├── render.yaml          # Render 免费/标准云部署配置
-├── railway.toml         # Railway 云部署配置
+├── render.yaml          # Render 免费/标准云部署配置（Blueprint 一键部署）
+├── railway.json         # Railway 云部署配置
 └── fly.toml             # Fly.io 云部署配置
 ```
 
