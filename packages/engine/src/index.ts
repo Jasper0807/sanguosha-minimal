@@ -14,3 +14,4 @@ export * from './skills/expansion/index.js';
 export * from './modes/index.js';
 export * from './ai/ruleAI.js';
 export * from './protocol.js';
+export * from './roomManager.js';

@@ -1,8 +1,11 @@
 # 极简三国杀网页版（Sanguosha Minimal Web）
 
+[![Live on GitHub Pages](https://img.shields.io/badge/在线试玩-GitHub%20Pages-8B2626?style=for-the-badge)](https://jasper0807.github.io/sanguosha-minimal/)
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Jasper0807/sanguosha-minimal)
 
-一款**零美术负担、高操作效率、严格对齐三国杀 OL 现行规则**的极简网页版三国杀，支持**单机人机 AI** 与**房间链接线上实时 PvP**，完整内置 **161 张军争牌堆**与 **89 位三国杀 OL 武将**。
+一款**零美术负担、高操作效率、严格对齐三国杀 OL 现行规则**的极简网页版三国杀，支持**单机人机 AI** 与**房间链接线上实时 PvP（双传输模式：GitHub Pages 零服务器 WebRTC P2P + Render/Docker 权威 WebSocket 服务端）**，完整内置 **161 张军争牌堆**与 **89 位三国杀 OL 武将**。
+
+> **在线直玩（含免费房间链接联机）**：<https://jasper0807.github.io/sanguosha-minimal/>
 
 ---
 
@@ -17,9 +20,10 @@
   - **1v1（纯单挑）**：无主公技、无先手修正，纯粹单挑。
   - **2v2（欢乐成双）**：1/4 号位 vs 2/3 号位、1 号位首回合摸 1、队友阵亡摸 1、队友手牌明牌可见。
   - **五人身份场**：1 主 1 忠 2 反 1 内、主公血上限 +1、杀反摸 3、主公杀忠弃光手牌装备、明置主公技与暗置身份推理 AI。
-- **房间链接线上实时 PvP**：
+- **双模式房间链接线上实时 PvP**：
   - 一键创建 6 位房间码与 `?room=XXXXXX` 邀请链接；
-  - 权威服务端运行同构 `@sgs/engine`，按玩家视角严格裁剪隐藏手牌与暗置身份（防作弊）；
+  - **零服务器 WebRTC P2P 模式（GitHub Pages 开箱即用）**：房主浏览器自动运行同构 `RoomManager`，好友点开链接通过 PeerJS WebRTC DataChannel 直连对局，无需部署任何后端；
+  - **权威 WebSocket 服务端模式（Render / Docker 自托管自动启用）**：服务端运行同构 `@sgs/engine`，按玩家视角严格裁剪隐藏手牌与暗置身份（防作弊）；
   - 支持房主自由增删 AI 补位、实时回合倒计时与超时自动托管、断线重连 Token、实时聊天抽屉与轮到你音效提示。
 - **确定性引擎与复盘录像**：
   - 同步生成器状态机 + 可注入 `SeededRng`；

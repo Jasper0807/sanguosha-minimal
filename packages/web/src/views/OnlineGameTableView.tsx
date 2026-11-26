@@ -22,7 +22,7 @@ import {
   WifiOff
 } from 'lucide-react';
 import { useGameStore } from '../store/gameStore';
-import { useOnlineStore } from '../store/onlineStore';
+import { buildRoomInviteUrl, useOnlineStore } from '../store/onlineStore';
 import { CardTile } from '../components/CardTile';
 import { PlayerSeat } from '../components/PlayerSeat';
 import { BattleLog } from '../components/BattleLog';
@@ -460,7 +460,7 @@ export function OnlineGameTableView() {
   const isCardSelectable = (cardId: number): boolean => selectableCardIdSet.has(cardId);
 
   const handleCopyInvite = async () => {
-    const inviteUrl = `${window.location.origin}/?room=${room.roomCode}`;
+    const inviteUrl = buildRoomInviteUrl(room.roomCode);
     try {
       await navigator.clipboard.writeText(inviteUrl);
       setCopied(true);

@@ -55,7 +55,9 @@ export function LobbyView({
   const {
     nickname,
     status: wsStatus,
+    detectedTransport,
     errorMessage: onlineError,
+    probeTransport,
     setNickname,
     createRoom,
     joinRoom,
@@ -73,6 +75,12 @@ export function LobbyView({
       setJoinCode(initialRoomCode);
     }
   }, [initialRoomCode]);
+
+  useEffect(() => {
+    if (lobbyTab === 'online' && !detectedTransport) {
+      void probeTransport();
+    }
+  }, [lobbyTab, detectedTransport, probeTransport]);
 
   const modeCards: { id: GameMode; title: string; subtitle: string; seats: string }[] = [
     {
@@ -203,12 +211,28 @@ export function LobbyView({
           <section className="rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-[#1E2128] p-5 shadow-sm">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <h2 className="text-sm font-bold flex items-center gap-1.5">
+                <h2 className="text-sm font-bold flex flex-wrap items-center gap-1.5">
                   <Link2 className="w-4 h-4 text-[#8B2626] dark:text-amber-400" />
-                  免注册实时联机 PvP（房间链接直连）
+                  <span>免注册实时联机 PvP（房间链接直连）</span>
+                  {detectedTransport && (
+                    <span
+                      className={[
+                        'text-[10px] font-bold px-2 py-0.5 rounded-full',
+                        detectedTransport === 'p2p'
+                          ? 'bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200'
+                          : 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200'
+                      ].join(' ')}
+                    >
+                      {detectedTransport === 'p2p'
+                        ? 'WebRTC P2P 零服务器联机'
+                        : '权威服务端联机'}
+                    </span>
+                  )}
                 </h2>
                 <p className="text-xs text-stone-500 mt-0.5">
-                  服务端权威防作弊 · 自动隔离手牌与身份 · 断线 30 秒保留座位并支持无缝重连
+                  {detectedTransport === 'p2p'
+                    ? '房主浏览器直连托管 · 零后端部署即可用链接邀好友实时 PvP · 断线支持自动重连'
+                    : '服务端权威防作弊 · 自动隔离手牌与身份 · 断线 30 秒保留座位并支持无缝重连'}
                 </p>
               </div>
               <div className="flex items-center gap-2 shrink-0">

@@ -19,13 +19,15 @@ import {
   WifiOff
 } from 'lucide-react';
 import { useGameStore } from '../store/gameStore';
-import { useOnlineStore } from '../store/onlineStore';
+import { buildRoomInviteUrl, useOnlineStore } from '../store/onlineStore';
 import { ChatDrawer } from '../components/ChatDrawer';
 
 export function OnlineRoomView() {
   const { theme, toggleTheme, setShowRulesModal } = useGameStore();
   const {
     status,
+    activeTransport,
+    isP2PHost,
     room,
     errorMessage,
     infoNotice,
@@ -46,10 +48,8 @@ export function OnlineRoomView() {
 
   if (!room) return null;
 
-  const inviteUrl =
-    typeof window !== 'undefined'
-      ? `${window.location.origin}/?room=${room.roomCode}`
-      : `/?room=${room.roomCode}`;
+  const isP2P = activeTransport === 'p2p';
+  const inviteUrl = buildRoomInviteUrl(room.roomCode);
 
   const handleCopyInvite = async () => {
     try {
@@ -133,7 +133,13 @@ export function OnlineRoomView() {
               ) : (
                 <WifiOff className="w-3 h-3" />
               )}
-              {status === 'connected' ? '已联机' : '重连中...'}
+              {status === 'connected'
+                ? isP2P
+                  ? isP2PHost
+                    ? 'P2P 房主已就绪'
+                    : 'P2P 已联机'
+                  : '权威服务端已联机'
+                : '重连中...'}
             </span>
 
             <button
@@ -155,6 +161,15 @@ export function OnlineRoomView() {
           </div>
         </div>
       </header>
+
+      {/* P2P Host Reminder */}
+      {isP2PHost && (
+        <div className="max-w-6xl w-full mx-auto px-5 pt-3">
+          <div className="rounded-lg px-4 py-2 text-xs font-medium bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200">
+            当前为 <strong>WebRTC P2P 免服务器联机</strong>：你是房主，好友将通过邀请链接直连你的浏览器。对局期间请勿关闭当前标签页。
+          </div>
+        </div>
+      )}
 
       {/* Alerts */}
       {(errorMessage || infoNotice) && (
@@ -327,7 +342,7 @@ export function OnlineRoomView() {
                           </span>
                           {isHost && !isMe && (
                             <>
-                              {seat.connected && (
+                              {!isP2P && seat.connected && (
                                 <button
                                   type="button"
                                   onClick={() => transferHost(seat.seatIndex)}
@@ -381,7 +396,9 @@ export function OnlineRoomView() {
                 对局规则配置{isHost ? '（房主可调）' : '（由房主配置）'}
               </h2>
               <span className="text-[11px] text-emerald-700 dark:text-emerald-300 font-medium">
-                服务端权威防作弊 · 自动隔离手牌与身份
+                {isP2P
+                  ? 'WebRTC P2P 房主托管 · 自动隔离手牌与身份'
+                  : '服务端权威防作弊 · 自动隔离手牌与身份'}
               </span>
             </div>
 

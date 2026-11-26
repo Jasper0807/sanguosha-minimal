@@ -9,6 +9,15 @@ import type {
   ServerMessage,
   TimerState
 } from '@sgs/engine';
+import {
+  P2PGuestSession,
+  P2PHostSession,
+  WebSocketTransportClient,
+  detectBestTransport,
+  getForcedTransportFromUrl,
+  type OnlineTransportClient,
+  type TransportKind
+} from '../p2p/p2pTransport';
 
 export type WsConnectionStatus = 'disconnected' | 'connecting' | 'connected';
 
@@ -51,13 +60,28 @@ function updateUrlRoomParam(roomCode: string | null): void {
   window.history.replaceState({}, '', url.toString());
 }
 
-function getWsUrl(): string {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${protocol}//${window.location.host}/ws`;
+/**
+ * Builds a clean invite URL that preserves GitHub Pages subpaths (e.g. `/sanguosha-minimal/`)
+ * as well as root deployments (e.g. Render / Docker).
+ */
+export function buildRoomInviteUrl(roomCode: string): string {
+  if (typeof window === 'undefined') return `?room=${roomCode}`;
+  const url = new URL(window.location.href);
+  const forcedTransport = getForcedTransportFromUrl();
+  url.search = '';
+  url.hash = '';
+  url.searchParams.set('room', roomCode);
+  if (forcedTransport) {
+    url.searchParams.set('transport', forcedTransport);
+  }
+  return url.toString();
 }
 
 interface OnlineStoreState {
   status: WsConnectionStatus;
+  detectedTransport: TransportKind | null;
+  activeTransport: TransportKind | null;
+  isP2PHost: boolean;
   nickname: string;
   room: RoomSnapshot | null;
   gamePayload: OnlineGamePayload | null;
@@ -79,6 +103,7 @@ interface OnlineStoreState {
   skipSimilarNullification: boolean;
 
   // Actions
+  probeTransport: () => Promise<TransportKind>;
   setNickname: (name: string) => void;
   setMuted: (muted: boolean) => void;
   setChatOpen: (open: boolean) => void;
@@ -120,17 +145,28 @@ interface OnlineStoreState {
   respondGuanxing: (topCardIds: number[], bottomCardIds: number[]) => void;
 }
 
-let activeSocket: WebSocket | null = null;
+let activeClient: OnlineTransportClient | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let intentionalClose = false;
 let lastRoomCode: string | null = null;
 let lastNickname: string = getSavedNickname();
-let pendingOnOpenMessage: ClientMessage | null = null;
+let reconnectAttempts = 0;
+let connectNonce = 0;
 
-function sendWs(msg: ClientMessage): boolean {
-  if (!activeSocket || activeSocket.readyState !== WebSocket.OPEN) return false;
-  activeSocket.send(JSON.stringify(msg));
-  return true;
+function sendClientMsg(msg: ClientMessage): boolean {
+  if (!activeClient) return false;
+  return activeClient.send(msg);
+}
+
+function disposeActiveClient(): void {
+  if (activeClient) {
+    try {
+      activeClient.close();
+    } catch {
+      // ignore
+    }
+    activeClient = null;
+  }
 }
 
 function resetSelectionFields() {
@@ -149,7 +185,7 @@ export const useOnlineStore = create<OnlineStoreState>((set, get) => {
   const submitResponse = (response: PlayerResponse) => {
     const prompt = get().gamePayload?.view.pendingPrompt;
     if (!prompt) return;
-    sendWs({
+    sendClientMsg({
       type: 'submit_action',
       promptId: prompt.promptId,
       response
@@ -157,78 +193,105 @@ export const useOnlineStore = create<OnlineStoreState>((set, get) => {
     set(resetSelectionFields());
   };
 
-  const connectAndSend = (firstMessage: ClientMessage) => {
+  const connectAndSend = (
+    firstMessage: Extract<ClientMessage, { type: 'create_room' | 'join_room' }>
+  ) => {
     if (reconnectTimer) {
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
     }
     intentionalClose = false;
 
-    if (activeSocket && activeSocket.readyState === WebSocket.OPEN) {
-      activeSocket.send(JSON.stringify(firstMessage));
-      return;
-    }
-
-    if (activeSocket) {
-      try {
-        activeSocket.onclose = null;
-        activeSocket.close();
-      } catch {
-        // ignore
-      }
-      activeSocket = null;
-    }
-
-    pendingOnOpenMessage = firstMessage;
+    const myNonce = ++connectNonce;
+    disposeActiveClient();
     set({ status: 'connecting', errorMessage: null });
 
-    const ws = new WebSocket(getWsUrl());
-    activeSocket = ws;
+    void detectBestTransport().then((transport) => {
+      if (myNonce !== connectNonce || intentionalClose) return;
 
-    ws.onopen = () => {
-      set({ status: 'connected', errorMessage: null });
-      if (pendingOnOpenMessage) {
-        ws.send(JSON.stringify(pendingOnOpenMessage));
-        pendingOnOpenMessage = null;
-      }
-    };
+      set({ detectedTransport: transport, activeTransport: transport });
 
-    ws.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(String(event.data)) as ServerMessage;
-        handleServerMessage(msg);
-      } catch {
-        // ignore malformed frames
-      }
-    };
+      const callbacks = {
+        onOpen: () => {
+          if (myNonce !== connectNonce) return;
+          reconnectAttempts = 0;
+          set({
+            status: 'connected',
+            activeTransport: transport,
+            isP2PHost: Boolean(activeClient?.isP2PHost),
+            errorMessage: null
+          });
+        },
+        onMessage: (msg: ServerMessage) => {
+          if (myNonce !== connectNonce) return;
+          handleServerMessage(msg);
+        },
+        onError: (message: string, fatal?: boolean) => {
+          if (myNonce !== connectNonce) return;
+          if (fatal) {
+            intentionalClose = true;
+            if (!get().room) {
+              lastRoomCode = null;
+            }
+            disposeActiveClient();
+            set({
+              status: 'disconnected',
+              activeTransport: null,
+              isP2PHost: false,
+              errorMessage: message,
+              infoNotice: null
+            });
+          } else {
+            set({ errorMessage: message });
+          }
+        },
+        onClose: (reason?: string) => {
+          if (myNonce !== connectNonce) return;
+          const wasP2PHost = Boolean(activeClient?.isP2PHost);
+          activeClient = null;
+          set({ status: 'disconnected', isP2PHost: false });
 
-    ws.onerror = () => {
-      set({
-        errorMessage: '无法连接联机服务器，请确认已启动统一服务端（pnpm server:start）'
-      });
-    };
-
-    ws.onclose = () => {
-      activeSocket = null;
-      set({ status: 'disconnected' });
-      // Auto-reconnect into current room using saved playerToken!
-      if (!intentionalClose && lastRoomCode) {
-        const codeToRejoin = lastRoomCode;
-        const savedToken = getSavedRoomToken(codeToRejoin) ?? undefined;
-        set({ infoNotice: '连接已断开，正在尝试自动重连...' });
-        reconnectTimer = setTimeout(() => {
-          reconnectTimer = null;
-          if (!intentionalClose && lastRoomCode === codeToRejoin) {
-            connectAndSend({
-              type: 'join_room',
-              roomCode: codeToRejoin,
-              nickname: lastNickname,
-              playerToken: savedToken
+          // Auto-reconnect into current room using saved playerToken (WS client or P2P guest)
+          if (!intentionalClose && !wasP2PHost && lastRoomCode && reconnectAttempts < 5) {
+            reconnectAttempts += 1;
+            const codeToRejoin = lastRoomCode;
+            const savedToken = getSavedRoomToken(codeToRejoin) ?? undefined;
+            set({
+              infoNotice: `${reason || '连接已断开'}，正在尝试自动重连（第 ${reconnectAttempts}/5 次）...`
+            });
+            reconnectTimer = setTimeout(() => {
+              reconnectTimer = null;
+              if (!intentionalClose && lastRoomCode === codeToRejoin) {
+                connectAndSend({
+                  type: 'join_room',
+                  roomCode: codeToRejoin,
+                  nickname: lastNickname,
+                  playerToken: savedToken
+                });
+              }
+            }, 1800);
+          } else if (!intentionalClose && reconnectAttempts >= 5) {
+            set({
+              errorMessage: '重连失败：房间可能已关闭，请返回大厅重新加入或建房',
+              infoNotice: null
             });
           }
-        }, 1800);
+        }
+      };
+
+      if (transport === 'p2p') {
+        if (firstMessage.type === 'create_room') {
+          activeClient = new P2PHostSession(firstMessage, callbacks);
+          set({ isP2PHost: true });
+        } else {
+          activeClient = new P2PGuestSession(firstMessage, callbacks);
+          set({ isP2PHost: false });
+        }
+      } else {
+        activeClient = new WebSocketTransportClient(firstMessage, callbacks);
+        set({ isP2PHost: false });
       }
-    };
+    });
   };
 
   const handleServerMessage = (msg: ServerMessage) => {
@@ -289,12 +352,14 @@ export const useOnlineStore = create<OnlineStoreState>((set, get) => {
         const code = lastRoomCode;
         if (code) clearRoomToken(code);
         intentionalClose = true;
+        connectNonce += 1;
         lastRoomCode = null;
         updateUrlRoomParam(null);
-        activeSocket?.close();
-        activeSocket = null;
+        disposeActiveClient();
         set({
           status: 'disconnected',
+          activeTransport: null,
+          isP2PHost: false,
           room: null,
           gamePayload: null,
           timer: null,
@@ -311,6 +376,9 @@ export const useOnlineStore = create<OnlineStoreState>((set, get) => {
 
   return {
     status: 'disconnected',
+    detectedTransport: null,
+    activeTransport: null,
+    isP2PHost: false,
     nickname: getSavedNickname(),
     room: null,
     gamePayload: null,
@@ -323,6 +391,12 @@ export const useOnlineStore = create<OnlineStoreState>((set, get) => {
     unreadChatCount: 0,
 
     ...resetSelectionFields(),
+
+    probeTransport: async () => {
+      const transport = await detectBestTransport();
+      set({ detectedTransport: transport });
+      return transport;
+    },
 
     setNickname: (nickname) => {
       saveNickname(nickname);
@@ -344,7 +418,8 @@ export const useOnlineStore = create<OnlineStoreState>((set, get) => {
       const cleaned = nickname.trim() || '房主';
       saveNickname(cleaned);
       lastNickname = cleaned;
-      set({ nickname: cleaned, errorMessage: null });
+      reconnectAttempts = 0;
+      set({ nickname: cleaned, errorMessage: null, infoNotice: null });
       connectAndSend({ type: 'create_room', nickname: cleaned, config });
     },
 
@@ -358,8 +433,9 @@ export const useOnlineStore = create<OnlineStoreState>((set, get) => {
       saveNickname(cleaned);
       lastNickname = cleaned;
       lastRoomCode = code;
+      reconnectAttempts = 0;
       const token = explicitToken ?? getSavedRoomToken(code) ?? undefined;
-      set({ nickname: cleaned, errorMessage: null });
+      set({ nickname: cleaned, errorMessage: null, infoNotice: null });
       connectAndSend({ type: 'join_room', roomCode: code, nickname: cleaned, playerToken: token });
     },
 
@@ -367,21 +443,20 @@ export const useOnlineStore = create<OnlineStoreState>((set, get) => {
       const code = get().room?.roomCode ?? lastRoomCode;
       if (code) clearRoomToken(code);
       intentionalClose = true;
+      connectNonce += 1;
       lastRoomCode = null;
+      reconnectAttempts = 0;
       if (reconnectTimer) {
         clearTimeout(reconnectTimer);
         reconnectTimer = null;
       }
-      sendWs({ type: 'leave_room' });
-      try {
-        activeSocket?.close();
-      } catch {
-        // ignore
-      }
-      activeSocket = null;
+      sendClientMsg({ type: 'leave_room' });
+      disposeActiveClient();
       updateUrlRoomParam(null);
       set({
         status: 'disconnected',
+        activeTransport: null,
+        isP2PHost: false,
         room: null,
         gamePayload: null,
         timer: null,
@@ -392,19 +467,19 @@ export const useOnlineStore = create<OnlineStoreState>((set, get) => {
       });
     },
 
-    swapSeat: (targetSeatIndex) => sendWs({ type: 'swap_seat', targetSeatIndex }),
-    setReady: (ready) => sendWs({ type: 'set_ready', ready }),
-    updateRoomConfig: (patch) => sendWs({ type: 'update_config', patch }),
-    addAI: (seatIndex) => sendWs({ type: 'add_ai', seatIndex }),
-    removeAI: (seatIndex) => sendWs({ type: 'remove_ai', seatIndex }),
-    kickSeat: (seatIndex) => sendWs({ type: 'kick_seat', seatIndex }),
-    transferHost: (seatIndex) => sendWs({ type: 'transfer_host', seatIndex }),
-    takeoverAI: (seatIndex) => sendWs({ type: 'takeover_ai', seatIndex }),
-    startOnlineGame: () => sendWs({ type: 'start_game' }),
-    rematchLobby: () => sendWs({ type: 'rematch_lobby' }),
+    swapSeat: (targetSeatIndex) => sendClientMsg({ type: 'swap_seat', targetSeatIndex }),
+    setReady: (ready) => sendClientMsg({ type: 'set_ready', ready }),
+    updateRoomConfig: (patch) => sendClientMsg({ type: 'update_config', patch }),
+    addAI: (seatIndex) => sendClientMsg({ type: 'add_ai', seatIndex }),
+    removeAI: (seatIndex) => sendClientMsg({ type: 'remove_ai', seatIndex }),
+    kickSeat: (seatIndex) => sendClientMsg({ type: 'kick_seat', seatIndex }),
+    transferHost: (seatIndex) => sendClientMsg({ type: 'transfer_host', seatIndex }),
+    takeoverAI: (seatIndex) => sendClientMsg({ type: 'takeover_ai', seatIndex }),
+    startOnlineGame: () => sendClientMsg({ type: 'start_game' }),
+    rematchLobby: () => sendClientMsg({ type: 'rematch_lobby' }),
     sendChat: (text) => {
       const trimmed = text.trim();
-      if (trimmed) sendWs({ type: 'send_chat', text: trimmed });
+      if (trimmed) sendClientMsg({ type: 'send_chat', text: trimmed });
     },
 
     clearSelection: () => set(resetSelectionFields()),
