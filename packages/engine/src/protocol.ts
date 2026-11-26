@@ -2,6 +2,7 @@ import type {
   ClientView,
   DeckVariant,
   GameMode,
+  GeneralPackSelection,
   PlayerResponse
 } from './core/types.js';
 import type { PlayableCardInfo } from './core/targeting.js';
@@ -18,7 +19,7 @@ export const QUICK_CHAT_PHRASES = [
 export interface RoomConfig {
   mode: GameMode;
   deckVariant: DeckVariant;
-  generalPack: 'standard' | 'blank';
+  generalPack: GeneralPackSelection;
   freeGeneralPick: boolean;
   timerEnabled: boolean;
   timerSeconds: number;

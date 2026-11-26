@@ -299,9 +299,11 @@ export function LobbyView({
                   </select>
                   <select
                     value={generalPack}
-                    onChange={(e) => setGeneralPack(e.target.value as 'standard' | 'blank')}
+                    onChange={(e) => setGeneralPack(e.target.value as 'standard' | 'limit_break' | 'all' | 'blank')}
                     className="px-2.5 py-1.5 rounded-lg border border-stone-300 dark:border-stone-700 bg-stone-50 dark:bg-stone-900"
                   >
+                    <option value="all">标准+界限 57将</option>
+                    <option value="limit_break">界限突破 30将</option>
                     <option value="standard">标准包 27将</option>
                     <option value="blank">白板测试将</option>
                   </select>
@@ -419,7 +421,39 @@ export function LobbyView({
                 >
                   <div className="font-bold text-sm">标准包（OL 27 武将）</div>
                   <div className="text-[11px] text-stone-500 mt-0.5">
-                    魏7 / 蜀7 / 吴8 / 群5 · 含 3 主公技、华雄耀武与袁术妄尊同疾
+                    魏7 / 蜀7 / 吴8 / 群5 · 经典标包与 3 主公技
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setGeneralPack('limit_break')}
+                  className={[
+                    'text-left rounded-lg p-3 border-2 transition-all',
+                    generalPack === 'limit_break'
+                      ? 'border-stone-900 dark:border-amber-400 bg-stone-50 dark:bg-stone-800'
+                      : 'border-stone-200 dark:border-stone-700'
+                  ].join(' ')}
+                >
+                  <div className="font-bold text-sm">界限突破（OL 30 武将）</div>
+                  <div className="text-[11px] text-stone-500 mt-0.5">
+                    27 界将 + 李典/界徐庶/界公孙瓒 · 含觉醒/限定/额外回合
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setGeneralPack('all')}
+                  className={[
+                    'text-left rounded-lg p-3 border-2 transition-all',
+                    generalPack === 'all'
+                      ? 'border-stone-900 dark:border-amber-400 bg-stone-50 dark:bg-stone-800'
+                      : 'border-stone-200 dark:border-stone-700'
+                  ].join(' ')}
+                >
+                  <div className="font-bold text-sm">标准 + 界限混池（57 武将）</div>
+                  <div className="text-[11px] text-stone-500 mt-0.5">
+                    全池混选，同名标/界武将自动互斥不重复
                   </div>
                 </button>
 

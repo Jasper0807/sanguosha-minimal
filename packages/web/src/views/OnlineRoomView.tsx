@@ -435,17 +435,25 @@ export function OnlineRoomView() {
                     value={room.config.generalPack}
                     onChange={(e) =>
                       updateRoomConfig({
-                        generalPack: e.target.value as 'standard' | 'blank'
+                        generalPack: e.target.value as 'standard' | 'limit_break' | 'all' | 'blank'
                       })
                     }
                     className="bg-transparent font-semibold outline-none"
                   >
+                    <option value="all">标准+界限 (57将)</option>
+                    <option value="limit_break">界限突破 (OL 30将)</option>
                     <option value="standard">标准包 (OL 27将)</option>
                     <option value="blank">白板测试将</option>
                   </select>
                 ) : (
                   <span className="font-semibold">
-                    {room.config.generalPack === 'standard' ? '标准包 27将' : '白板测试将'}
+                    {room.config.generalPack === 'all'
+                      ? '标准+界限 57将'
+                      : room.config.generalPack === 'limit_break'
+                        ? '界限突破 30将'
+                        : room.config.generalPack === 'standard'
+                          ? '标准包 27将'
+                          : '白板测试将'}
                   </span>
                 )}
               </div>

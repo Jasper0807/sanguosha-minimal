@@ -58,6 +58,14 @@ export function getPlayableCardInfo(
   const player = state.players.find((p) => p.id === playerId);
   if (!player || !player.alive) return null;
 
+  // LB Guan Yu Yijue (black card): target cannot use or play hand cards this turn
+  if (
+    player.cannotPlayHandCardsThisTurn &&
+    player.hand.some((c) => c.id === card.id)
+  ) {
+    return null;
+  }
+
   const others = state.players.filter((p) => p.alive && p.id !== playerId);
 
   // Equipment cards are always playable onto self
@@ -82,7 +90,9 @@ export function getPlayableCardInfo(
     let targets = others
       .filter(
         (t) =>
-          isInAttackRange(state, playerId, t.id, modifiers) && canTarget(t, card.name)
+          (isInAttackRange(state, playerId, t.id, modifiers) ||
+            Boolean(modifiers?.isSlashDistanceUnlimited(state, player, t, card))) &&
+          canTarget(t, card.name)
       )
       .map((t) => t.id);
     if (modifiers) {

@@ -88,6 +88,8 @@ export interface CardInstance extends CardSpec {
   pack: CardPack;
   /** Temporary delayed-trick identity while sitting in a player's judgeZone (e.g. Da Qiao's Guose) */
   asDelayedTrick?: 'indulgence' | 'supply_shortage' | 'lightning';
+  /** If equal to state.turn, this card does not count against hand limit (e.g. LB Zhen Ji Luoshen) */
+  exemptFromHandLimitTurn?: number;
 }
 
 export interface VirtualCard {
@@ -111,6 +113,8 @@ export type GeneralPack =
   | 'huo'
   | 'lin'
   | 'shan';
+
+export type GeneralPackSelection = 'standard' | 'limit_break' | 'all' | 'blank';
 
 export interface SkillMeta {
   id: string;
@@ -198,8 +202,16 @@ export interface PlayerState {
   judgeZone: CardInstance[];
   woodenOxCards: CardInstance[];
   woodenOxUsedThisTurn: boolean;
+  /** Out-of-game card piles owned by player (e.g. LB Lu Xun Qianxun, Deng Ai Tian, Zhou Tai Chuang) */
+  removedCards: Record<string, CardInstance[]>;
   skills: string[];
   disabledSkills: string[];
+  /** Sealed non-compulsory skills until current turn ends (LB Ma Chao Tieqi, LB Guan Yu Yijue) */
+  nonCompulsoryDisabledThisTurn?: boolean;
+  /** Cannot use or play hand cards until current turn ends (LB Guan Yu Yijue black card) */
+  cannotPlayHandCardsThisTurn?: boolean;
+  /** Grants an extra turn after current turn finishes (LB Lu Meng Botu) */
+  extraTurnPending?: boolean;
   marks: Record<string, number>;
   stats: PlayerStats;
 }
@@ -219,7 +231,7 @@ export interface GameConfig {
   deckVariant: DeckVariant;
   seed: number;
   seats: SeatConfig[];
-  generalPack?: 'standard' | 'blank' | 'all';
+  generalPack?: GeneralPackSelection;
   skipGeneralSelection?: boolean;
   debug?: {
     revealAllHands?: boolean;
@@ -492,6 +504,10 @@ export interface GameState {
   nullificationSkipByPlayer: Record<string, string[]>;
   /** Consecutive draw-exhaustion counter for tie protection */
   emptyDeckTurnCounter: number;
+  /** Distinct suits placed into discardPile during the current turn (LB Lu Meng Botu) */
+  turnSuitsDiscarded: Suit[];
+  /** Damage dealt by each player during the current turn (LB Xu Shu Zhuhai) */
+  turnDamageDealtByPlayer: Record<string, number>;
   /** Event-sourced response log for deterministic replay */
   actionLog: RecordedAction[];
 }

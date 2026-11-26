@@ -8,6 +8,7 @@ import {
   type DeckVariant,
   type GameConfig,
   type GameMode,
+  type GeneralPackSelection,
   type PlayableCardInfo,
   type PlayerResponse,
   type SeatConfig
@@ -30,7 +31,7 @@ interface GameStoreState {
   theme: 'light' | 'dark';
   mode: GameMode;
   deckVariant: DeckVariant;
-  generalPack: 'standard' | 'blank';
+  generalPack: GeneralPackSelection;
   seed: number;
   seats: SeatConfig[];
   hostSettings: HostSettings;
@@ -61,7 +62,7 @@ interface GameStoreState {
   toggleTheme: () => void;
   setMode: (mode: GameMode) => void;
   setDeckVariant: (variant: DeckVariant) => void;
-  setGeneralPack: (pack: 'standard' | 'blank') => void;
+  setGeneralPack: (pack: GeneralPackSelection) => void;
   setSeed: (seed: number) => void;
   randomizeSeed: () => void;
   updateSeat: (index: number, patch: Partial<SeatConfig>) => void;

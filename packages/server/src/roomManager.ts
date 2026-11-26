@@ -753,7 +753,12 @@ export class RoomManager {
       if (patch.deckVariant === 'standard_ex' || patch.deckVariant === 'junzheng_161') {
         room.config.deckVariant = patch.deckVariant;
       }
-      if (patch.generalPack === 'standard' || patch.generalPack === 'blank') {
+      if (
+        patch.generalPack === 'standard' ||
+        patch.generalPack === 'limit_break' ||
+        patch.generalPack === 'all' ||
+        patch.generalPack === 'blank'
+      ) {
         room.config.generalPack = patch.generalPack;
       }
       if (typeof patch.freeGeneralPick === 'boolean') {

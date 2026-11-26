@@ -60,6 +60,7 @@ function makePlayer(id: string, seat: number, overrides: Partial<PlayerState> = 
     judgeZone: [],
     woodenOxCards: [],
     woodenOxUsedThisTurn: false,
+    removedCards: {},
     skills: [],
     disabledSkills: [],
     marks: {},
@@ -93,6 +94,8 @@ function makeState(players: PlayerState[], mode: '1v1' | '2v2' | 'identity5' = '
     result: null,
     nullificationSkipByPlayer: {},
     emptyDeckTurnCounter: 0,
+    turnSuitsDiscarded: [],
+    turnDamageDealtByPlayer: {},
     actionLog: []
   };
 }

@@ -9,6 +9,7 @@ export * from './core/engine.js';
 export * from './data/cards/index.js';
 export * from './data/generals/index.js';
 export * from './skills/standard/index.js';
+export * from './skills/limitBreak/index.js';
 export * from './modes/index.js';
 export * from './ai/ruleAI.js';
 export * from './protocol.js';

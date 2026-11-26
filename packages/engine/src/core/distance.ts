@@ -95,7 +95,11 @@ export function getHandLimit(
   player: PlayerState,
   modifiers?: ModifierRegistry
 ): number {
-  const base = Math.max(0, player.hp);
+  const overrideBase = modifiers ? modifiers.getHandLimitBaseOverride(state, player) : null;
+  const base = overrideBase !== null ? Math.max(0, overrideBase) : Math.max(0, player.hp);
   const delta = modifiers ? modifiers.getHandLimitDelta(state, player) : 0;
-  return Math.max(0, base + delta);
+  const exemptCount = player.hand.filter(
+    (c) => c.exemptFromHandLimitTurn === state.turn
+  ).length;
+  return Math.max(0, base + delta + exemptCount);
 }

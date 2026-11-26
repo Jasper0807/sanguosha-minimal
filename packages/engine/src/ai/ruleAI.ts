@@ -316,13 +316,117 @@ export function decideAIAction(engine: GameEngine, playerId: string): PlayerResp
         case 'biyue':
         case 'hujia':
         case 'jijiang':
+        case 'lb_jianxiong':
+        case 'lb_fankui':
+        case 'lb_yiji':
+        case 'lb_luoshen':
+        case 'lb_xunxun':
+        case 'lb_luoyi_peek':
+        case 'lb_hujia':
+        case 'lb_jijiang':
+        case 'lb_tishen':
+        case 'lb_guanxing':
+        case 'lb_yajiao':
+        case 'lb_tieqi':
+        case 'lb_jizhi':
+        case 'lb_botu':
+        case 'lb_lianying':
+        case 'lb_liyu':
+        case 'lb_biyue':
+        case 'lb_qiaomeng':
           return { type: 'choose_option', optionId: 'yes' };
-        case 'ganglie': {
+        case 'lb_luoyi_confirm':
+          return {
+            type: 'choose_option',
+            optionId: prompt.message.includes('获得 0 张') ? 'no' : 'yes'
+          };
+        case 'lb_wangxi':
+        case 'lb_qingjian': {
+          const hasAlly = state.players.some(
+            (p) => p.alive && p.id !== ai.id && evaluateRelation(state, ai, p) > 0
+          );
+          if (prompt.reason === 'lb_qingjian') {
+            return { type: 'choose_option', optionId: hasAlly && ai.hand.length >= 2 ? 'yes' : 'no' };
+          }
+          // lb_wangxi: activate if drawing 2 & giving 1 nets +1 card (always good unless target is critical enemy? actually +1 card for self is usually worth it, or always yes when ai.hand <= 3)
+          return { type: 'choose_option', optionId: ai.hand.length <= 3 ? 'yes' : 'no' };
+        }
+        case 'lb_hujia_draw':
+        case 'lb_jijiang_draw':
+        case 'lb_jiuyuan': {
+          const lord = state.players.find((p) => p.alive && prompt.message.includes(p.name));
+          const isAlly = lord ? evaluateRelation(state, ai, lord) > 0 : false;
+          if (prompt.reason === 'lb_jiuyuan') {
+            return { type: 'choose_option', optionId: isAlly && ai.hp >= 2 ? 'yes' : 'no' };
+          }
+          return { type: 'choose_option', optionId: isAlly ? 'yes' : 'no' };
+        }
+        case 'ganglie':
+        case 'lb_ganglie': {
           const enemyExists = state.players.some(
             (p) => p.alive && prompt.message.includes(p.name) && evaluateRelation(state, ai, p) < 0
           );
           return { type: 'choose_option', optionId: enemyExists ? 'yes' : 'no' };
         }
+        case 'lb_yijue_heal': {
+          const target = state.players.find((p) => p.alive && prompt.message.includes(p.name));
+          return {
+            type: 'choose_option',
+            optionId: target && evaluateRelation(state, ai, target) > 0 ? 'yes' : 'no'
+          };
+        }
+        case 'lb_jizhi_discard':
+          return {
+            type: 'choose_option',
+            optionId: ai.hand.length > getHandLimit(state, ai, engine.modifiers) ? 'yes' : 'no'
+          };
+        case 'lb_fenwei': {
+          const isHarmful =
+            prompt.message.includes('南蛮') ||
+            prompt.message.includes('万箭') ||
+            prompt.message.includes('铁索');
+          return { type: 'choose_option', optionId: isHarmful ? 'yes' : 'no' };
+        }
+        case 'lb_qinxue':
+          return { type: 'choose_option', optionId: ai.hp <= 2 ? 'heal' : 'draw' };
+        case 'lb_gongxin_card': {
+          const cardOpt = prompt.options.find((o) => o.id.startsWith('card_'));
+          return { type: 'choose_option', optionId: cardOpt ? cardOpt.id : prompt.options[0].id };
+        }
+        case 'lb_gongxin_action':
+          return { type: 'choose_option', optionId: 'discard' };
+        case 'lb_fanjian':
+          return {
+            type: 'choose_option',
+            optionId: ai.hp <= 1 || ai.hand.length <= 2 ? 'discard_suit' : 'lose_hp'
+          };
+        case 'lb_qianxun':
+          return { type: 'choose_option', optionId: ai.hand.length >= 2 ? 'yes' : 'no' };
+        case 'lb_jieyin_mode': {
+          const target = state.players.find((p) => p.alive && prompt.message.includes(p.name));
+          return {
+            type: 'choose_option',
+            optionId: target && evaluateRelation(state, ai, target) > 0 ? 'equip' : 'discard'
+          };
+        }
+        case 'lb_yongsi':
+          return {
+            type: 'choose_option',
+            optionId: ai.hp <= 2 || ai.hand.length >= 2 ? 'discard' : 'lose_hp'
+          };
+        case 'lb_jixi':
+          return { type: 'choose_option', optionId: 'draw_lord' };
+        case 'lb_rende_basic': {
+          if (ai.hp < ai.maxHp && prompt.options.some((o) => o.id === 'peach')) {
+            return { type: 'choose_option', optionId: 'peach' };
+          }
+          if (prompt.options.some((o) => o.id === 'slash')) {
+            return { type: 'choose_option', optionId: 'slash' };
+          }
+          return { type: 'choose_option', optionId: prompt.options[0].id };
+        }
+        case 'lb_jianyan_declare':
+          return { type: 'choose_option', optionId: 'trick' };
         case 'ganglie_choice':
           return {
             type: 'choose_option',
@@ -371,7 +475,7 @@ export function decideAIAction(engine: GameEngine, playerId: string): PlayerResp
     }
 
     case 'choose_target': {
-      if (prompt.reason === 'tuxi') {
+      if (prompt.reason === 'tuxi' || prompt.reason === 'lb_tuxi') {
         const enemies = prompt.eligibleTargetIds
           .map((id) => engine.getPlayer(id))
           .filter((p) => evaluateRelation(state, ai, p) < 0)
@@ -383,15 +487,41 @@ export function decideAIAction(engine: GameEngine, playerId: string): PlayerResp
         }
         return { type: 'choose_target', targetIds: [], cancelled: true };
       }
-      if (prompt.reason === 'yiji_give') {
-        // Prefer giving to wounded/low-hand ally or self
+      if (
+        prompt.reason === 'yiji_give' ||
+        prompt.reason === 'lb_yiji_give' ||
+        prompt.reason === 'lb_qingjian_target' ||
+        prompt.reason === 'lb_yajiao_give' ||
+        prompt.reason === 'lb_jianyan_target'
+      ) {
         const allies = prompt.eligibleTargetIds
           .map((id) => engine.getPlayer(id))
           .filter((p) => evaluateRelation(state, ai, p) > 0)
           .sort((a, b) => a.hand.length - b.hand.length);
+        if (allies.length > 0) {
+          return { type: 'choose_target', targetIds: [allies[0].id] };
+        }
+        if (prompt.optional) {
+          return { type: 'choose_target', targetIds: [], cancelled: true };
+        }
+        return { type: 'choose_target', targetIds: [prompt.eligibleTargetIds[0]] };
+      }
+      if (prompt.reason === 'lb_fenwei_targets' || prompt.reason === 'lb_lianying_targets') {
+        const allies = prompt.eligibleTargetIds
+          .map((id) => engine.getPlayer(id))
+          .filter((p) => evaluateRelation(state, ai, p) > 0)
+          .sort((a, b) => a.hp - b.hp)
+          .slice(0, prompt.maxCount)
+          .map((p) => p.id);
+        if (allies.length >= prompt.minCount) {
+          return { type: 'choose_target', targetIds: allies };
+        }
+        if (prompt.optional) {
+          return { type: 'choose_target', targetIds: [], cancelled: true };
+        }
         return {
           type: 'choose_target',
-          targetIds: [allies[0]?.id ?? ai.id]
+          targetIds: prompt.eligibleTargetIds.slice(0, prompt.minCount)
         };
       }
       const enemy = pickBestEnemy(state, ai, prompt.eligibleTargetIds);
@@ -535,7 +665,6 @@ function decideChooseCard(
 
     case 'general_skill': {
       if (prompt.optional) {
-        // Optional skill card prompt (e.g., 鬼才, 激将 ally assist, 流离 discard)
         if (prompt.message.includes('鬼才')) {
           return { type: 'choose_card', cardIds: [], cancelled: true };
         }
@@ -543,6 +672,21 @@ function decideChooseCard(
           const lord = state.players.find((p) => p.role === 'lord');
           if (lord && evaluateRelation(state, ai, lord) > 0 && eligible.length > 0) {
             return { type: 'choose_card', cardIds: [eligible[0].id] };
+          }
+          return { type: 'choose_card', cardIds: [], cancelled: true };
+        }
+        if (prompt.message.includes('诛害')) {
+          const target = state.players.find((p) => p.alive && prompt.message.includes(p.name));
+          if (target && evaluateRelation(state, ai, target) < 0 && eligible.length > 0) {
+            return { type: 'choose_card', cardIds: [eligible[0].id] };
+          }
+          return { type: 'choose_card', cardIds: [], cancelled: true };
+        }
+        if (prompt.message.includes('铁骑')) {
+          // Discard matching suit card to allow dodging if low HP and spare card
+          if (ai.hp <= 2 && eligible.length > 0) {
+            const sorted = [...eligible].sort((a, b) => cardKeepValue(a, ai) - cardKeepValue(b, ai));
+            return { type: 'choose_card', cardIds: [sorted[0].id] };
           }
           return { type: 'choose_card', cardIds: [], cancelled: true };
         }
@@ -577,9 +721,20 @@ function decidePlayPhase(engine: GameEngine, ai: PlayerState): PlayerResponse {
   if (playPrompt?.type === 'play_action' && playPrompt.usableSkills.length > 0) {
     const byId = (sid: string) => playPrompt.usableSkills.find((s) => s.skillId === sid);
 
-    // 孙权制衡: discard low-value cards once per turn
-    const zhiheng = byId('zhiheng');
+    // 孙权制衡 / 界孙权制衡: discard low-value cards once per turn (LB: dump whole hand if <=3 for +1 draw!)
+    const zhiheng = byId('zhiheng') ?? byId('lb_zhiheng');
     if (zhiheng) {
+      if (zhiheng.skillId === 'lb_zhiheng' && ai.hand.length >= 1 && ai.hand.length <= 3) {
+        const allHandIds = ai.hand
+          .map((c) => c.id)
+          .filter((id) => zhiheng.eligibleCardIds.includes(id));
+        if (allHandIds.length === ai.hand.length && allHandIds.length >= 1) {
+          return {
+            type: 'play_action',
+            action: { type: 'activate_skill', skillId: 'lb_zhiheng', cardIds: allHandIds }
+          };
+        }
+      }
       const toDiscard = zhiheng.eligibleCardIds.filter((id) => {
         const c = findCard(id);
         return c ? cardKeepValue(c, ai) < 62 : false;
@@ -587,7 +742,209 @@ function decidePlayPhase(engine: GameEngine, ai: PlayerState): PlayerResponse {
       if (toDiscard.length >= 1) {
         return {
           type: 'play_action',
-          action: { type: 'activate_skill', skillId: 'zhiheng', cardIds: toDiscard }
+          action: { type: 'activate_skill', skillId: zhiheng.skillId, cardIds: toDiscard }
+        };
+      }
+    }
+
+    // 界黄盖苦肉（配诈降摸3+红杀buff）: once per turn when hp >= 2
+    const lbKurou = byId('lb_kurou');
+    if (lbKurou && ai.hp >= 2) {
+      const lowCard = lbKurou.eligibleCardIds
+        .map((id) => findCard(id) ?? Object.values(ai.equips).find((e) => e?.id === id))
+        .filter((c): c is CardInstance => Boolean(c))
+        .sort((a, b) => cardKeepValue(a, ai) - cardKeepValue(b, ai))[0];
+      if (lowCard) {
+        return {
+          type: 'play_action',
+          action: { type: 'activate_skill', skillId: 'lb_kurou', cardIds: [lowCard.id] }
+        };
+      }
+    }
+
+    // 界关羽义绝: once per turn against best enemy
+    const lbYijue = byId('lb_yijue');
+    if (lbYijue) {
+      const enemy = pickBestEnemy(state, ai, lbYijue.eligibleTargetIds);
+      const lowCard = ai.hand
+        .filter((c) => lbYijue.eligibleCardIds.includes(c.id))
+        .sort((a, b) => cardKeepValue(a, ai) - cardKeepValue(b, ai))[0];
+      if (enemy && lowCard && cardKeepValue(lowCard, ai) < 78) {
+        return {
+          type: 'play_action',
+          action: {
+            type: 'activate_skill',
+            skillId: 'lb_yijue',
+            cardIds: [lowCard.id],
+            targetIds: [enemy.id]
+          }
+        };
+      }
+    }
+
+    // 界周瑜反间: once per turn against best enemy
+    const lbFanjian = byId('lb_fanjian');
+    if (lbFanjian) {
+      const enemy = pickBestEnemy(state, ai, lbFanjian.eligibleTargetIds);
+      const lowCard = ai.hand
+        .filter((c) => lbFanjian.eligibleCardIds.includes(c.id))
+        .sort((a, b) => cardKeepValue(a, ai) - cardKeepValue(b, ai))[0];
+      if (enemy && lowCard && cardKeepValue(lowCard, ai) < 72) {
+        return {
+          type: 'play_action',
+          action: {
+            type: 'activate_skill',
+            skillId: 'lb_fanjian',
+            cardIds: [lowCard.id],
+            targetIds: [enemy.id]
+          }
+        };
+      }
+    }
+
+    // 界大乔国色: once per turn (strip ally Indulgence or put Indulgence on enemy + draw 1)
+    const lbGuose = byId('lb_guose');
+    if (lbGuose) {
+      const lowDiamond = ai.hand
+        .filter((c) => lbGuose.eligibleCardIds.includes(c.id) && cardKeepValue(c, ai) < 82)
+        .sort((a, b) => cardKeepValue(a, ai) - cardKeepValue(b, ai))[0];
+      if (lowDiamond) {
+        const allyWithInd = lbGuose.eligibleTargetIds
+          .map((id) => engine.getPlayer(id))
+          .find(
+            (p) =>
+              evaluateRelation(state, ai, p) > 0 &&
+              p.judgeZone.some((c) => (c.asDelayedTrick ?? c.name) === 'indulgence')
+          );
+        const enemyTarget = pickBestEnemy(
+          state,
+          ai,
+          lbGuose.eligibleTargetIds.filter(
+            (id) => !engine.getPlayer(id).judgeZone.some((c) => (c.asDelayedTrick ?? c.name) === 'indulgence')
+          ),
+          (t) => t.hand.length * 8
+        );
+        const chosenTarget = allyWithInd ?? enemyTarget;
+        if (chosenTarget) {
+          return {
+            type: 'play_action',
+            action: {
+              type: 'activate_skill',
+              skillId: 'lb_guose',
+              cardIds: [lowDiamond.id],
+              targetIds: [chosenTarget.id]
+            }
+          };
+        }
+      }
+    }
+
+    // 界孙尚香结姻: once per turn
+    const lbJieyin = byId('lb_jieyin');
+    if (lbJieyin) {
+      const maleAlly = lbJieyin.eligibleTargetIds
+        .map((id) => engine.getPlayer(id))
+        .filter((p) => evaluateRelation(state, ai, p) > 0 && p.hp !== ai.hp)
+        .sort((a, b) => a.hp - b.hp)[0];
+      const lowHand = ai.hand
+        .filter((c) => lbJieyin.eligibleCardIds.includes(c.id))
+        .sort((a, b) => cardKeepValue(a, ai) - cardKeepValue(b, ai))[0];
+      if (maleAlly && lowHand && cardKeepValue(lowHand, ai) < 76) {
+        return {
+          type: 'play_action',
+          action: {
+            type: 'activate_skill',
+            skillId: 'lb_jieyin',
+            cardIds: [lowHand.id],
+            targetIds: [maleAlly.id]
+          }
+        };
+      }
+    }
+
+    // 界华佗除疠: once per turn against enemies of distinct factions
+    const lbChuli = byId('lb_chuli');
+    if (lbChuli) {
+      const seenFactions = new Set<string>();
+      const chosenEnemies: string[] = [];
+      for (const tid of lbChuli.eligibleTargetIds) {
+        const p = engine.getPlayer(tid);
+        if (evaluateRelation(state, ai, p) < 0 && !seenFactions.has(p.faction)) {
+          seenFactions.add(p.faction);
+          chosenEnemies.push(p.id);
+        }
+      }
+      if (chosenEnemies.length >= 1) {
+        return {
+          type: 'play_action',
+          action: { type: 'activate_skill', skillId: 'lb_chuli', targetIds: chosenEnemies }
+        };
+      }
+    }
+
+    // 界华雄势斩: up to 2x per turn when holding >= 2 Slashes & healthy HP
+    const lbShizhan = byId('lb_shizhan');
+    if (lbShizhan && ai.hp >= 3) {
+      const mySlashes = usable.filter((c) => isSlashCardName(c.name)).length;
+      const enemy = pickBestEnemy(state, ai, lbShizhan.eligibleTargetIds, (t) => -t.hand.length * 10);
+      if (enemy && mySlashes >= 2) {
+        return {
+          type: 'play_action',
+          action: { type: 'activate_skill', skillId: 'lb_shizhan', targetIds: [enemy.id] }
+        };
+      }
+    }
+
+    // 界徐庶荐言 & 界吕蒙攻心: once per turn
+    const lbJianyan = byId('lb_jianyan');
+    if (lbJianyan) {
+      return {
+        type: 'play_action',
+        action: { type: 'activate_skill', skillId: 'lb_jianyan' }
+      };
+    }
+
+    const lbGongxin = byId('lb_gongxin');
+    if (lbGongxin) {
+      const enemy = pickBestEnemy(state, ai, lbGongxin.eligibleTargetIds);
+      if (enemy) {
+        return {
+          type: 'play_action',
+          action: { type: 'activate_skill', skillId: 'lb_gongxin', targetIds: [enemy.id] }
+        };
+      }
+    }
+
+    // 界刘备仁德: give 2 low-value cards to ally once per turn for virtual basic card
+    const lbRende = byId('lb_rende');
+    if (lbRende && !ai.marks['lb_rende_used_basic'] && ai.hand.length >= 2) {
+      const ally = lbRende.eligibleTargetIds
+        .map((id) => engine.getPlayer(id))
+        .filter((p) => evaluateRelation(state, ai, p) > 0)[0];
+      if (ally) {
+        const sorted = [...ai.hand].sort((a, b) => cardKeepValue(a, ai) - cardKeepValue(b, ai));
+        return {
+          type: 'play_action',
+          action: {
+            type: 'activate_skill',
+            skillId: 'lb_rende',
+            cardIds: [sorted[0].id, sorted[1].id],
+            targetIds: [ally.id]
+          }
+        };
+      }
+    }
+
+    // 界赵云龙胆: Alcohol -> Peach when wounded
+    const lbLongdan = byId('lb_longdan');
+    if (lbLongdan && ai.hp < ai.maxHp) {
+      const alc = usable.find(
+        (c) => c.name === 'alcohol' && lbLongdan.eligibleCardIds.includes(c.id)
+      );
+      if (alc) {
+        return {
+          type: 'play_action',
+          action: { type: 'activate_skill', skillId: 'lb_longdan', cardIds: [alc.id] }
         };
       }
     }

@@ -3,6 +3,7 @@ import type {
   CardInstance,
   CardName,
   DamageContext,
+  EquipSlot,
   GameState,
   JudgeContext,
   PlayerResponse,
@@ -11,6 +12,7 @@ import type {
   TurnPhase,
   VirtualCard
 } from './types.js';
+import { getSkillMetaById } from '../data/generals/index.js';
 
 export type TriggerTiming =
   | 'TurnStart'
@@ -21,8 +23,12 @@ export type TriggerTiming =
   | 'DrawCards'
   | 'CardUsed'
   | 'CardResponded'
+  | 'CardPlayedOrUsedOutOfTurn'
+  | 'CardObtained'
   | 'TargetSpecified'
   | 'TargetConfirmed'
+  | 'TrickTargetsSpecified'
+  | 'SingleTrickBeforeEffect'
   | 'SlashMissed'
   | 'DamageBefore'
   | 'DamageStart'
@@ -31,6 +37,8 @@ export type TriggerTiming =
   | 'AfterDamageDealt'
   | 'AfterDamageTaken'
   | 'DamageEnd'
+  | 'HpLost'
+  | 'BeforeHeal'
   | 'JudgeModify'
   | 'JudgeResolved'
   | 'EquipLost'
@@ -47,6 +55,32 @@ export interface SlashTargetContext {
   redirectedTargetId?: string;
 }
 
+export interface TrickTargetsContext {
+  actorId: string;
+  card: CardInstance;
+  targetIds: string[];
+  cancelledTargetIds: string[];
+}
+
+export interface SingleTrickContext {
+  actorId: string | null;
+  targetId: string;
+  card: CardInstance;
+  isDelayed: boolean;
+}
+
+export interface BeforeHealContext {
+  targetId: string;
+  amount: number;
+  cancelled: boolean;
+}
+
+export interface OutOfTurnCardContext {
+  playerId: string;
+  card: CardInstance | VirtualCard;
+  isRealCard: boolean;
+}
+
 export interface TriggerPayload {
   timing: TriggerTiming;
   playerId?: string;
@@ -56,6 +90,13 @@ export interface TriggerPayload {
   damage?: DamageContext;
   judge?: JudgeContext;
   slashTarget?: SlashTargetContext;
+  trickTargets?: TrickTargetsContext;
+  singleTrick?: SingleTrickContext;
+  beforeHeal?: BeforeHealContext;
+  outOfTurnCard?: OutOfTurnCardContext;
+  obtainedCards?: CardInstance[];
+  hpLostAmount?: number;
+  lostHandCount?: number;
   drawCount?: number;
   lostEquip?: CardInstance;
   killerId?: string | null;
@@ -76,7 +117,11 @@ export interface TriggerHelpers {
   moveToDiscard: (card: CardInstance) => void;
   pushTableCard: (card: CardInstance, actorId?: string, label?: string) => void;
   heal: (playerId: string, amount: number) => number;
+  healAsync: (playerId: string, amount: number) => Generator<PromptRequest, number, PlayerResponse>;
   loseHp: (playerId: string, amount: number) => EngineGenerator;
+  changeMaxHp: (playerId: string, delta: number) => EngineGenerator;
+  gainSkill: (playerId: string, skillId: string) => void;
+  putEquipDirectly: (targetId: string, card: CardInstance) => EngineGenerator;
   applyDamage: (ctx: DamageContext) => EngineGenerator;
   resolveJudge: (playerId: string, reason: string) => Generator<PromptRequest, CardInstance, PlayerResponse>;
   resolveSlash: (
@@ -104,9 +149,16 @@ export interface TriggerHelpers {
   ) => Generator<PromptRequest, CardInstance | null, PlayerResponse>;
   checkHandEmptied: (playerId: string, prevHandLength: number) => EngineGenerator;
   fireEquipLost: (playerId: string, lostEquip: CardInstance) => EngineGenerator;
+  notifyCardsObtained: (playerId: string, cards: CardInstance[]) => EngineGenerator;
+  notifyOutOfTurnCard: (
+    playerId: string,
+    card: CardInstance | VirtualCard,
+    isRealCard?: boolean
+  ) => EngineGenerator;
   takeCardFromDiscard: (cardId: number) => CardInstance | null;
   getDistance: (fromId: string, toId: string) => number;
   isInAttackRange: (attackerId: string, targetId: string) => boolean;
+  canDiscardPlayerEquip: (actorId: string, targetId: string, slot: EquipSlot) => boolean;
 }
 
 export interface TriggerHandler {
@@ -154,6 +206,8 @@ export interface ModifierHooks {
   attackRangeDelta?: (state: GameState, player: PlayerState) => number;
   /** Delta applied to slash usage limit in play phase */
   slashLimitDelta?: (state: GameState, player: PlayerState) => number;
+  /** Base override for hand card limit (e.g. LB Zhou Yu Yingzi -> maxHp) */
+  handLimitBaseOverride?: (state: GameState, player: PlayerState) => number | null;
   /** Delta applied to hand card limit during discard phase */
   handLimitDelta?: (state: GameState, player: PlayerState) => number;
   /** Extra draw count during draw phase */
@@ -167,6 +221,13 @@ export interface ModifierHooks {
   ) => boolean;
   /** Whether player ignores distance for Trick cards (黄月英【奇才】) */
   trickDistanceUnlimited?: (state: GameState, player: PlayerState) => boolean;
+  /** Whether player ignores distance for a specific Slash card (界关羽♦杀 / 界黄盖红杀) */
+  slashDistanceUnlimited?: (
+    state: GameState,
+    source: PlayerState,
+    target: PlayerState,
+    card?: CardInstance | VirtualCard
+  ) => boolean;
   /** Whether target can be targeted by a specific card (诸葛亮【空城】, 陆逊【谦逊】) */
   canBeTargetedByCard?: (
     state: GameState,
@@ -193,12 +254,19 @@ export interface ModifierHooks {
     responder: PlayerState,
     opponent: PlayerState
   ) => number;
-  /** Extra HP healed when `helper` uses Peach on `victim` (孙权【救援】 -> +1) */
+  /** Extra HP healed when `helper` uses Peach on `victim` (标孙权【救援】 -> +1) */
   peachHealBonus?: (
     state: GameState,
     helper: PlayerState,
     victim: PlayerState
   ) => number;
+  /** Whether `actor` is allowed to discard `target`'s equip in `slot` (界黄月英【奇才】) */
+  canDiscardEquip?: (
+    state: GameState,
+    actor: PlayerState,
+    target: PlayerState,
+    slot: EquipSlot
+  ) => boolean;
 }
 
 export class ModifierRegistry {
@@ -234,6 +302,19 @@ export class ModifierRegistry {
     );
   }
 
+  getHandLimitBaseOverride(state: GameState, player: PlayerState): number | null {
+    let result: number | null = null;
+    for (const m of this.modifiers) {
+      if (m.handLimitBaseOverride) {
+        const val = m.handLimitBaseOverride(state, player);
+        if (val !== null) {
+          result = result === null ? val : Math.max(result, val);
+        }
+      }
+    }
+    return result;
+  }
+
   getHandLimitDelta(state: GameState, player: PlayerState): number {
     return this.modifiers.reduce(
       (sum, m) => sum + (m.handLimitDelta ? m.handLimitDelta(state, player) : 0),
@@ -262,6 +343,17 @@ export class ModifierRegistry {
   isTrickDistanceUnlimited(state: GameState, player: PlayerState): boolean {
     return this.modifiers.some((m) =>
       m.trickDistanceUnlimited ? m.trickDistanceUnlimited(state, player) : false
+    );
+  }
+
+  isSlashDistanceUnlimited(
+    state: GameState,
+    source: PlayerState,
+    target: PlayerState,
+    card?: CardInstance | VirtualCard
+  ): boolean {
+    return this.modifiers.some((m) =>
+      m.slashDistanceUnlimited ? m.slashDistanceUnlimited(state, source, target, card) : false
     );
   }
 
@@ -329,6 +421,17 @@ export class ModifierRegistry {
       0
     );
   }
+
+  canDiscardEquip(
+    state: GameState,
+    actor: PlayerState,
+    target: PlayerState,
+    slot: EquipSlot
+  ): boolean {
+    return this.modifiers.every((m) =>
+      m.canDiscardEquip ? m.canDiscardEquip(state, actor, target, slot) : true
+    );
+  }
 }
 
 export interface ActiveSkillHandler {
@@ -353,13 +456,13 @@ export interface ResponseSkillHooks {
   extraDodgeCardIds?: (state: GameState, player: PlayerState) => number[];
   /** Extra card IDs usable as Slash (关羽武圣, 赵云龙胆) */
   extraSlashCardIds?: (state: GameState, player: PlayerState) => number[];
-  /** Extra card IDs usable as Peach in Dying rescue (华佗急救) */
+  /** Extra card IDs usable as Peach in Dying rescue (华佗急救, 界赵云酒当桃) */
   extraDyingPeachCardIds?: (
     state: GameState,
     helper: PlayerState,
     victim: PlayerState
   ) => number[];
-  /** Lord assist Dodge (曹操护驾) */
+  /** Lord assist Dodge (曹操护驾 / 界曹操护驾) */
   assistDodge?: (
     state: GameState,
     target: PlayerState,
@@ -367,7 +470,7 @@ export interface ResponseSkillHooks {
     sourceCard: CardInstance | VirtualCard,
     helpers: TriggerHelpers
   ) => Generator<PromptRequest, boolean, PlayerResponse>;
-  /** Lord assist Slash (刘备激将) */
+  /** Lord assist Slash (刘备激将 / 界刘备激将) */
   assistSlash?: (
     state: GameState,
     player: PlayerState,
@@ -447,9 +550,14 @@ export class SkillRegistry {
 }
 
 export function hasActiveSkill(player: PlayerState, skillId: string): boolean {
-  return (
-    player.alive &&
-    player.skills.includes(skillId) &&
-    !player.disabledSkills.includes(skillId)
-  );
+  if (!player.alive) return false;
+  if (!player.skills.includes(skillId)) return false;
+  if (player.disabledSkills.includes(skillId)) return false;
+  if (player.nonCompulsoryDisabledThisTurn) {
+    const meta = getSkillMetaById(skillId);
+    if (!meta || meta.type !== 'compulsory') {
+      return false;
+    }
+  }
+  return true;
 }
