@@ -6,7 +6,8 @@ import type {
   PlayerResponse,
   PlayerState,
   PromptRequest,
-  TurnPhase
+  TurnPhase,
+  VirtualCard
 } from './types.js';
 
 export type TriggerTiming =
@@ -112,7 +113,7 @@ export interface ModifierHooks {
     state: GameState,
     source: PlayerState,
     target: PlayerState,
-    card?: CardInstance
+    card?: CardInstance | VirtualCard
   ) => boolean;
 }
 
@@ -167,7 +168,7 @@ export class ModifierRegistry {
     state: GameState,
     source: PlayerState,
     target: PlayerState,
-    card?: CardInstance
+    card?: CardInstance | VirtualCard
   ): boolean {
     return this.modifiers.some((m) =>
       m.ignoreArmor ? m.ignoreArmor(state, source, target, card) : false

@@ -1,0 +1,2386 @@
+import {
+  getCardColor,
+  getRankLabel,
+  getSuitSymbol,
+  isSlashCardName,
+  type CardInstance,
+  type ClientView,
+  type DamageContext,
+  type DamageElement,
+  type GameConfig,
+  type GameState,
+  type GeneralDefinition,
+  type JudgeContext,
+  type PlayerResponse,
+  type PlayerState,
+  type PromptRequest,
+  type RecordedAction,
+  type TurnPhase,
+  type VirtualCard
+} from './types.js';
+import { SeededRng } from './rng.js';
+import {
+  ModifierRegistry,
+  TriggerRegistry,
+  type EngineGenerator,
+  type TriggerHelpers,
+  type TriggerPayload,
+  type TriggerTiming
+} from './events.js';
+import { getHandLimit, isInAttackRange } from './distance.js';
+import { buildClientView, type ViewOptions } from './view.js';
+import {
+  buildPlayerCardChoices,
+  extractChoiceCard,
+  getEquipSlot,
+  getEquippedCards,
+  getUsableCards,
+  hasAnyCardInZones,
+  popTopCards,
+  removeHandOrEquipCard,
+  removeUsableCard
+} from './deck.js';
+import {
+  canUseSerpentSpearInPlay,
+  canUseWoodenOxInPlay,
+  getAlivePlayersInOrder,
+  getAllPlayableCards,
+  getPlayableCardInfo,
+  type PlayableCardInfo
+} from './targeting.js';
+import { buildDeck } from '../data/cards/index.js';
+import { BLANK_GENERALS, getGeneralById } from '../data/generals/blank.js';
+import { getModeRuleSet, type ModeRuleSet } from '../modes/index.js';
+
+const TURN_PHASES: readonly TurnPhase[] = [
+  'prepare',
+  'judge',
+  'draw',
+  'play',
+  'discard',
+  'finish'
+];
+
+const MAX_TURNS_SAFETY = 600;
+
+function formatCard(card: CardInstance | VirtualCard): string {
+  return `${getSuitSymbol(card.suit)}${getRankLabel(card.rank)}【${card.displayName}】`;
+}
+
+function toVirtualCard(card: CardInstance, overrideName?: CardInstance['name'], overrideElement?: DamageElement): VirtualCard {
+  const name = overrideName ?? card.name;
+  const element = overrideElement ?? card.element ?? 'normal';
+  const displayName =
+    overrideName === 'fire_slash'
+      ? '火杀'
+      : overrideName === 'thunder_slash'
+        ? '雷杀'
+        : card.displayName;
+  return {
+    name,
+    displayName,
+    suit: card.suit,
+    rank: card.rank,
+    color: getCardColor(card.suit),
+    element,
+    subcards: [card]
+  };
+}
+
+function buildSerpentSpearVirtualSlash(cards: [CardInstance, CardInstance]): VirtualCard {
+  const c0 = getCardColor(cards[0].suit);
+  const c1 = getCardColor(cards[1].suit);
+  const color = c0 === c1 ? c0 : 'none';
+  return {
+    name: 'slash',
+    displayName: '杀(丈八)',
+    suit: 'none',
+    rank: 0,
+    color,
+    element: 'normal',
+    subcards: cards,
+    sourceSkill: 'serpent_spear'
+  };
+}
+
+export interface EngineOptions {
+  /** Optional custom unshuffled draw pile override for deterministic unit tests */
+  deckOverride?: CardInstance[];
+  /** Available generals pool (defaults to BLANK_GENERALS in Phase 1–3) */
+  generalPool?: readonly GeneralDefinition[];
+}
+
+export class GameEngine {
+  readonly state: GameState;
+  readonly rng: SeededRng;
+  readonly triggers = new TriggerRegistry();
+  readonly modifiers = new ModifierRegistry();
+
+  private readonly modeRules: ModeRuleSet;
+  private readonly generalPool: readonly GeneralDefinition[];
+  private readonly firstTurnDone = new Set<string>();
+  private runner: Generator<PromptRequest, void, PlayerResponse> | null = null;
+  private started = false;
+
+  constructor(config: GameConfig, options: EngineOptions = {}) {
+    this.rng = new SeededRng(config.seed);
+    this.modeRules = getModeRuleSet(config.mode);
+    this.generalPool = options.generalPool ?? BLANK_GENERALS;
+
+    if (config.seats.length !== this.modeRules.playerCount) {
+      throw new Error(
+        `Mode ${config.mode} requires ${this.modeRules.playerCount} seats, got ${config.seats.length}`
+      );
+    }
+
+    const baseDeck = options.deckOverride
+      ? options.deckOverride.map((c) => ({ ...c }))
+      : this.rng.shuffle(buildDeck(config.deckVariant));
+
+    const initialPlayers: PlayerState[] = config.seats.map((seat, idx) => {
+      const defaultGen = this.generalPool[idx % this.generalPool.length] ?? getGeneralById('blank_wei_m');
+      const gen = seat.generalId
+        ? this.generalPool.find((g) => g.id === seat.generalId) ?? getGeneralById(seat.generalId)
+        : defaultGen;
+      return {
+        id: seat.id ?? `p${idx + 1}`,
+        seat: idx,
+        name: seat.name,
+        isAI: seat.isAI,
+        role: 'duelist',
+        roleRevealed: true,
+        generalId: gen.id,
+        generalName: gen.name,
+        generalTitle: gen.title,
+        faction: gen.faction,
+        gender: gen.gender,
+        hp: gen.maxHp,
+        maxHp: gen.maxHp,
+        alive: true,
+        chained: false,
+        flipped: false,
+        drunk: false,
+        drunkUsedThisTurn: 0,
+        slashUsedThisTurn: 0,
+        hand: [],
+        equips: {
+          weapon: null,
+          armor: null,
+          horsePlus: null,
+          horseMinus: null,
+          treasure: null
+        },
+        judgeZone: [],
+        woodenOxCards: [],
+        woodenOxUsedThisTurn: false,
+        skills: gen.skills.map((s) => s.id),
+        disabledSkills: [],
+        marks: {},
+        stats: {
+          damageDealt: 0,
+          damageTaken: 0,
+          kills: 0,
+          cardsPlayed: 0
+        }
+      };
+    });
+
+    this.state = {
+      config,
+      turn: 0,
+      round: 0,
+      activePlayerIndex: 0,
+      phase: 'setup',
+      skippedPhases: [],
+      players: initialPlayers,
+      drawPile: baseDeck,
+      discardPile: [],
+      tableCards: [],
+      harvestPool: [],
+      events: [],
+      nextEventId: 1,
+      nextPromptId: 1,
+      pendingPrompt: null,
+      result: null,
+      nullificationSkipByPlayer: {},
+      emptyDeckTurnCounter: 0,
+      actionLog: []
+    };
+
+    const roleSetup = this.modeRules.setupRoles(this.state, this.rng);
+    this.state.players.forEach((p, idx) => {
+      p.role = roleSetup.roles[idx];
+      p.team = roleSetup.teams?.[idx];
+      if (config.mode === 'identity5') {
+        p.roleRevealed = p.role === 'lord';
+      } else {
+        p.roleRevealed = true;
+      }
+    });
+    this.state.activePlayerIndex = roleSetup.firstPlayerIndex;
+
+    this.registerCoreEquipmentHooks();
+  }
+
+  /**
+   * Replays a recorded game deterministically from config + actionLog.
+   */
+  static replay(
+    config: GameConfig,
+    actionLog: readonly RecordedAction[],
+    options: EngineOptions = {}
+  ): GameEngine {
+    const engine = new GameEngine(config, options);
+    engine.start();
+    for (const entry of actionLog) {
+      if (engine.state.result || !engine.state.pendingPrompt) break;
+      engine.submit(entry.response);
+    }
+    return engine;
+  }
+
+  private registerCoreEquipmentHooks(): void {
+    // 青釭剑: Slash ignores target armor
+    this.modifiers.register({
+      id: 'equip_qinggang_sword',
+      ignoreArmor: (_state, source, _target, card) =>
+        Boolean(
+          card &&
+            isSlashCardName(card.name) &&
+            source.equips.weapon?.name === 'qinggang_sword'
+        )
+    });
+
+    // 寒冰剑: On Slash DamageDealt, may prevent damage & discard up to 2 hand/equip cards
+    this.triggers.register({
+      id: 'equip_ice_sword',
+      timing: 'DamageDealt',
+      priority: 60,
+      condition: (state, payload) => {
+        const dmg = payload.damage;
+        if (!dmg || dmg.prevented || dmg.isChainDamage || !dmg.sourceId) return false;
+        if (!dmg.card || !isSlashCardName(dmg.card.name)) return false;
+        const source = state.players.find((p) => p.id === dmg.sourceId);
+        const target = state.players.find((p) => p.id === dmg.targetId);
+        if (!source || !target || !source.alive || !target.alive) return false;
+        if (source.equips.weapon?.name !== 'ice_sword') return false;
+        return hasAnyCardInZones(target, false);
+      },
+      execute: (state, payload) => {
+        const engine = this;
+        return (function* () {
+          const dmg = payload.damage!;
+          const source = state.players.find((p) => p.id === dmg.sourceId)!;
+          const target = state.players.find((p) => p.id === dmg.targetId)!;
+          const ans = yield* engine.ask({
+            type: 'choose_option',
+            promptId: engine.nextPromptId(),
+            playerId: source.id,
+            reason: 'ice_sword',
+            message: `是否发动【寒冰剑】，防止对 ${target.name} 的伤害并改为依次弃置其至多两张牌？`,
+            options: [
+              { id: 'yes', label: '发动【寒冰剑】' },
+              { id: 'no', label: '不发动（正常造成伤害）' }
+            ]
+          });
+          if (ans.type !== 'choose_option' || ans.optionId !== 'yes') return;
+
+          dmg.prevented = true;
+          engine.log('equip', `${source.name} 发动【寒冰剑】，防止了对 ${target.name} 的伤害`, source.id, [target.id]);
+
+          for (let step = 0; step < 2; step++) {
+            if (!target.alive || !hasAnyCardInZones(target, false)) break;
+            const choices = buildPlayerCardChoices(target, {
+              includeHand: true,
+              includeEquips: true,
+              includeJudge: false
+            });
+            const pick = yield* engine.ask({
+              type: 'choose_player_card',
+              promptId: engine.nextPromptId(),
+              playerId: source.id,
+              targetId: target.id,
+              reason: 'ice_sword',
+              message: `【寒冰剑】第 ${step + 1} 张：选择弃置 ${target.name} 的一张手牌或装备牌`,
+              choices
+            });
+            const idx = pick.type === 'choose_player_card' ? pick.choiceIndex : 0;
+            const choice = choices[idx] ?? choices[0];
+            if (!choice) break;
+            const extracted = extractChoiceCard(target, choice);
+            if (extracted) {
+              engine.moveToDiscard(extracted.card);
+              for (const oxCard of extracted.lostWoodenOxStash) {
+                engine.moveToDiscard(oxCard);
+              }
+              engine.log(
+                'discard',
+                `${source.name} 通过【寒冰剑】弃置了 ${target.name} 的 ${formatCard(extracted.card)}`,
+                source.id,
+                [target.id],
+                [extracted.card.id]
+              );
+              if (extracted.wasEquip) {
+                yield* engine.fireTrigger('EquipLost', {
+                  playerId: target.id,
+                  lostEquip: extracted.card
+                });
+              }
+            }
+          }
+        })();
+      }
+    });
+
+    // 麒麟弓: On Slash DamageDealt (when not prevented), may discard target's horse
+    this.triggers.register({
+      id: 'equip_kylin_bow',
+      timing: 'DamageDealt',
+      priority: 40,
+      condition: (state, payload) => {
+        const dmg = payload.damage;
+        if (!dmg || dmg.prevented || dmg.isChainDamage || !dmg.sourceId) return false;
+        if (!dmg.card || !isSlashCardName(dmg.card.name)) return false;
+        const source = state.players.find((p) => p.id === dmg.sourceId);
+        const target = state.players.find((p) => p.id === dmg.targetId);
+        if (!source || !target || !source.alive || !target.alive) return false;
+        if (source.equips.weapon?.name !== 'kylin_bow') return false;
+        return Boolean(target.equips.horsePlus || target.equips.horseMinus);
+      },
+      execute: (state, payload) => {
+        const engine = this;
+        return (function* () {
+          const dmg = payload.damage!;
+          const source = state.players.find((p) => p.id === dmg.sourceId)!;
+          const target = state.players.find((p) => p.id === dmg.targetId)!;
+          const ans = yield* engine.ask({
+            type: 'choose_option',
+            promptId: engine.nextPromptId(),
+            playerId: source.id,
+            reason: 'kylin_bow',
+            message: `是否发动【麒麟弓】，弃置 ${target.name} 装备区里的一张坐骑牌？`,
+            options: [
+              { id: 'yes', label: '发动【麒麟弓】' },
+              { id: 'no', label: '不发动' }
+            ]
+          });
+          if (ans.type !== 'choose_option' || ans.optionId !== 'yes') return;
+
+          const choices = buildPlayerCardChoices(target, {
+            includeHand: false,
+            includeEquips: true,
+            includeJudge: false,
+            horsesOnly: true
+          });
+          let choice = choices[0];
+          if (choices.length > 1) {
+            const pick = yield* engine.ask({
+              type: 'choose_player_card',
+              promptId: engine.nextPromptId(),
+              playerId: source.id,
+              targetId: target.id,
+              reason: 'kylin_bow',
+              message: `选择要弃置的 ${target.name} 的坐骑牌`,
+              choices
+            });
+            const idx = pick.type === 'choose_player_card' ? pick.choiceIndex : 0;
+            choice = choices[idx] ?? choices[0];
+          }
+          if (!choice) return;
+          const extracted = extractChoiceCard(target, choice);
+          if (extracted) {
+            engine.moveToDiscard(extracted.card);
+            engine.log(
+              'equip',
+              `${source.name} 发动【麒麟弓】弃置了 ${target.name} 的 ${formatCard(extracted.card)}`,
+              source.id,
+              [target.id],
+              [extracted.card.id]
+            );
+            yield* engine.fireTrigger('EquipLost', {
+              playerId: target.id,
+              lostEquip: extracted.card
+            });
+          }
+        })();
+      }
+    });
+
+    // 古锭刀 (Phase 2 ready): Compulsory +1 damage if Slash hits empty-handed target
+    this.triggers.register({
+      id: 'equip_guding_blade',
+      timing: 'DamageDealt',
+      priority: 50,
+      condition: (state, payload) => {
+        const dmg = payload.damage;
+        if (!dmg || dmg.prevented || dmg.isChainDamage || !dmg.sourceId) return false;
+        if (!dmg.card || !isSlashCardName(dmg.card.name)) return false;
+        const source = state.players.find((p) => p.id === dmg.sourceId);
+        const target = state.players.find((p) => p.id === dmg.targetId);
+        if (!source || !target || !source.alive || !target.alive) return false;
+        return source.equips.weapon?.name === 'guding_blade' && target.hand.length === 0;
+      },
+      execute: (state, payload) => {
+        const engine = this;
+        return (function* () {
+          const dmg = payload.damage!;
+          const source = state.players.find((p) => p.id === dmg.sourceId)!;
+          const target = state.players.find((p) => p.id === dmg.targetId)!;
+          dmg.amount += 1;
+          engine.log(
+            'equip',
+            `${source.name} 的【古锭刀】生效，${target.name} 无手牌，伤害+1（当前 ${dmg.amount} 点）`,
+            source.id,
+            [target.id]
+          );
+        })();
+      }
+    });
+
+    // 藤甲 (Phase 2 ready): Compulsory +1 fire damage when armor not ignored
+    this.triggers.register({
+      id: 'equip_vine_armor_fire',
+      timing: 'DamageTaken',
+      priority: 50,
+      condition: (state, payload) => {
+        const dmg = payload.damage;
+        if (!dmg || dmg.prevented || dmg.armorIgnored) return false;
+        if (dmg.element !== 'fire') return false;
+        const target = state.players.find((p) => p.id === dmg.targetId);
+        return Boolean(target && target.alive && target.equips.armor?.name === 'vine_armor');
+      },
+      execute: (state, payload) => {
+        const engine = this;
+        return (function* () {
+          const dmg = payload.damage!;
+          const target = state.players.find((p) => p.id === dmg.targetId)!;
+          dmg.amount += 1;
+          engine.log(
+            'equip',
+            `${target.name} 的【藤甲】引燃，火焰伤害+1（当前 ${dmg.amount} 点）`,
+            target.id
+          );
+        })();
+      }
+    });
+
+    // 白银狮子 (Phase 2 ready): Compulsory cap damage > 1 down to 1 (when armor not ignored)
+    this.triggers.register({
+      id: 'equip_silver_lion_cap',
+      timing: 'DamageTaken',
+      priority: 30,
+      condition: (state, payload) => {
+        const dmg = payload.damage;
+        if (!dmg || dmg.prevented || dmg.armorIgnored || dmg.amount <= 1) return false;
+        const target = state.players.find((p) => p.id === dmg.targetId);
+        return Boolean(target && target.alive && target.equips.armor?.name === 'silver_lion');
+      },
+      execute: (state, payload) => {
+        const engine = this;
+        return (function* () {
+          const dmg = payload.damage!;
+          const target = state.players.find((p) => p.id === dmg.targetId)!;
+          dmg.amount = 1;
+          engine.log('equip', `${target.name} 的【白银狮子】生效，将伤害减至 1 点`, target.id);
+        })();
+      }
+    });
+
+    // 白银狮子 (Phase 2 ready): Losing Silver Lion from equip zone heals 1 HP
+    this.triggers.register({
+      id: 'equip_silver_lion_heal',
+      timing: 'EquipLost',
+      priority: 50,
+      condition: (state, payload) => {
+        if (!payload.playerId || payload.lostEquip?.name !== 'silver_lion') return false;
+        const player = state.players.find((p) => p.id === payload.playerId);
+        return Boolean(player && player.alive && player.hp < player.maxHp);
+      },
+      execute: (state, payload) => {
+        const engine = this;
+        return (function* () {
+          const player = state.players.find((p) => p.id === payload.playerId)!;
+          const healed = engine.healPlayer(player.id, 1);
+          if (healed > 0) {
+            engine.log('heal', `${player.name} 失去【白银狮子】，回复 1 点体力（HP ${player.hp}/${player.maxHp}）`, player.id);
+          }
+        })();
+      }
+    });
+  }
+
+  /**
+   * Starts the synchronous generator game loop and runs until the first PromptRequest or game over.
+   */
+  start(): PromptRequest | null {
+    if (this.started) return this.state.pendingPrompt;
+    this.started = true;
+    this.runner = this.runGame();
+    const step = this.runner.next();
+    if (step.done) {
+      this.state.pendingPrompt = null;
+      return null;
+    }
+    this.state.pendingPrompt = step.value;
+    return step.value;
+  }
+
+  /**
+   * Submits a PlayerResponse to the current pendingPrompt and advances synchronously
+   * until the next PromptRequest or GameOver.
+   */
+  submit(response: PlayerResponse): PromptRequest | null {
+    if (!this.runner || !this.state.pendingPrompt) {
+      return null;
+    }
+    const prompt = this.state.pendingPrompt;
+    this.state.actionLog.push({
+      promptId: prompt.promptId,
+      playerId: prompt.playerId,
+      response
+    });
+    this.state.pendingPrompt = null;
+    const step = this.runner.next(response);
+    if (step.done) {
+      this.state.pendingPrompt = null;
+      return null;
+    }
+    this.state.pendingPrompt = step.value;
+    return step.value;
+  }
+
+  getClientView(viewerId: string, options?: ViewOptions): ClientView {
+    return buildClientView(this.state, viewerId, options);
+  }
+
+  getPlayableCards(playerId: string): PlayableCardInfo[] {
+    return getAllPlayableCards(this.state, playerId, this.modifiers);
+  }
+
+  getPlayer(playerId: string): PlayerState {
+    const p = this.state.players.find((x) => x.id === playerId);
+    if (!p) throw new Error(`Unknown playerId: ${playerId}`);
+    return p;
+  }
+
+  private nextPromptId(): string {
+    const id = `prompt_${this.state.nextPromptId}`;
+    this.state.nextPromptId += 1;
+    return id;
+  }
+
+  private log(
+    type: string,
+    message: string,
+    actorId?: string,
+    targetIds?: string[],
+    cardIds?: number[]
+  ): void {
+    this.state.events.push({
+      id: this.state.nextEventId++,
+      turn: this.state.turn,
+      phase: this.state.phase,
+      type,
+      actorId,
+      targetIds,
+      cardIds,
+      message
+    });
+  }
+
+  private createTriggerHelpers(): TriggerHelpers {
+    return {
+      ask: (prompt) => this.ask(prompt),
+      log: (type, message, actorId, targetIds, cardIds) =>
+        this.log(type, message, actorId, targetIds, cardIds),
+      drawCards: (playerId, count) => this.drawForPlayer(playerId, count),
+      heal: (playerId, amount) => this.healPlayer(playerId, amount),
+      discardCards: (playerId, cardIds) => this.discardPlayerCards(playerId, cardIds)
+    };
+  }
+
+  private *ask(prompt: PromptRequest): Generator<PromptRequest, PlayerResponse, PlayerResponse> {
+    const response = yield prompt;
+    return response;
+  }
+
+  private *fireTrigger(timing: TriggerTiming, partial: Omit<TriggerPayload, 'timing'>): EngineGenerator {
+    const payload: TriggerPayload = { timing, ...partial };
+    const handlers = this.triggers.getHandlers(timing);
+    const helpers = this.createTriggerHelpers();
+    for (const handler of handlers) {
+      if (this.state.result) return;
+      if (handler.condition && !handler.condition(this.state, payload)) continue;
+      yield* handler.execute(this.state, payload, helpers);
+    }
+  }
+
+  private moveToDiscard(card: CardInstance): void {
+    this.state.discardPile.push(card);
+  }
+
+  private pushTableCard(card: CardInstance, actorId?: string, label?: string): void {
+    this.state.tableCards.push({ card, actorId, label });
+    if (this.state.tableCards.length > 10) {
+      this.state.tableCards.shift();
+    }
+  }
+
+  private drawForPlayer(playerId: string, count: number): CardInstance[] {
+    if (count <= 0) return [];
+    const player = this.getPlayer(playerId);
+    const drawn = popTopCards(this.state, this.rng, count);
+    if (drawn.length > 0) {
+      this.state.emptyDeckTurnCounter = 0;
+      player.hand.push(...drawn);
+    }
+    return drawn;
+  }
+
+  private healPlayer(playerId: string, amount: number): number {
+    const player = this.getPlayer(playerId);
+    if (!player.alive || amount <= 0) return 0;
+    const before = player.hp;
+    player.hp = Math.min(player.maxHp, player.hp + amount);
+    return player.hp - before;
+  }
+
+  private discardPlayerCards(playerId: string, cardIds: number[]): CardInstance[] {
+    const player = this.getPlayer(playerId);
+    const discarded: CardInstance[] = [];
+    for (const id of cardIds) {
+      const removed = removeHandOrEquipCard(player, id);
+      if (removed) {
+        this.moveToDiscard(removed.card);
+        for (const ox of removed.lostWoodenOxStash) {
+          this.moveToDiscard(ox);
+        }
+        discarded.push(removed.card);
+      }
+    }
+    return discarded;
+  }
+
+  private applyGeneralToPlayer(player: PlayerState, general: GeneralDefinition): void {
+    const isIdentityLord = this.state.config.mode === 'identity5' && player.role === 'lord';
+    const maxHp = general.maxHp + (isIdentityLord ? 1 : 0);
+    player.generalId = general.id;
+    player.generalName = general.name;
+    player.generalTitle = general.title;
+    player.faction = general.faction;
+    player.gender = general.gender;
+    player.maxHp = maxHp;
+    player.hp = maxHp;
+    player.skills = general.skills
+      .filter((s) => this.modeRules.allowLordSkills || s.type !== 'lord')
+      .map((s) => s.id);
+  }
+
+  private *runGeneralSelection(): EngineGenerator {
+    const pool = [...this.generalPool];
+    const usedBaseIds = new Set<string>();
+    const freePick = Boolean(this.state.config.debug?.freeGeneralPick);
+
+    // Order: in identity5 Lord picks first, then seat order
+    const ordered = [...this.state.players].sort((a, b) => {
+      if (this.state.config.mode === 'identity5') {
+        if (a.role === 'lord') return -1;
+        if (b.role === 'lord') return 1;
+      }
+      return a.seat - b.seat;
+    });
+
+    const shuffledPool = this.rng.shuffle(pool);
+
+    for (const player of ordered) {
+      const seatCfg = this.state.config.seats[player.seat];
+      if (seatCfg?.generalId && this.state.config.skipGeneralSelection) {
+        const chosen = pool.find((g) => g.id === seatCfg.generalId) ?? pool[0];
+        this.applyGeneralToPlayer(player, chosen);
+        usedBaseIds.add(chosen.baseGeneralId ?? chosen.id);
+        continue;
+      }
+
+      if (this.state.config.skipGeneralSelection) {
+        const available = shuffledPool.filter((g) => !usedBaseIds.has(g.baseGeneralId ?? g.id));
+        const chosen = available[0] ?? pool[player.seat % pool.length];
+        this.applyGeneralToPlayer(player, chosen);
+        usedBaseIds.add(chosen.baseGeneralId ?? chosen.id);
+        continue;
+      }
+
+      // Interactive general selection!
+      const available = shuffledPool.filter((g) => !usedBaseIds.has(g.baseGeneralId ?? g.id));
+      let candidates: GeneralDefinition[];
+      if (freePick) {
+        candidates = pool.filter((g) => !usedBaseIds.has(g.baseGeneralId ?? g.id));
+      } else {
+        const lordExtras =
+          this.state.config.mode === 'identity5' && player.role === 'lord'
+            ? available.filter((g) => g.isLordCandidate)
+            : [];
+        const rest = available.filter((g) => !lordExtras.includes(g));
+        const pickSize = player.role === 'lord' ? 5 : 3;
+        candidates = [...lordExtras, ...rest].slice(0, Math.min(pickSize, available.length));
+      }
+      if (candidates.length === 0) candidates = [pool[0]];
+
+      const res = yield* this.ask({
+        type: 'choose_general',
+        promptId: this.nextPromptId(),
+        playerId: player.id,
+        message: `${player.name} 请选择出战武将`,
+        candidates
+      });
+      const chosenId = res.type === 'choose_general' ? res.generalId : candidates[0].id;
+      const chosen = candidates.find((c) => c.id === chosenId) ?? candidates[0];
+      this.applyGeneralToPlayer(player, chosen);
+      usedBaseIds.add(chosen.baseGeneralId ?? chosen.id);
+      this.log(
+        'setup',
+        `${player.name} 选择了武将【${chosen.name}】（HP ${player.maxHp}）`,
+        player.id
+      );
+    }
+  }
+
+  private *runGame(): EngineGenerator {
+    this.state.phase = 'setup';
+    yield* this.runGeneralSelection();
+
+    // Deal initial hands
+    for (const player of this.state.players) {
+      const initCount = this.modeRules.getInitialHandCount(this.state, player);
+      this.drawForPlayer(player.id, initCount);
+    }
+    this.log(
+      'setup',
+      `对局开始（模式：${this.state.config.mode}，牌堆剩余 ${this.state.drawPile.length} 张）`
+    );
+
+    const firstSeatIdx = this.state.activePlayerIndex;
+    this.state.round = 1;
+
+    while (!this.state.result) {
+      const current = this.state.players[this.state.activePlayerIndex];
+
+      if (current.alive) {
+        if (current.flipped) {
+          current.flipped = false;
+          this.log('turn', `${current.name} 将武将牌翻回正面，跳过本回合`, current.id);
+        } else {
+          this.state.turn += 1;
+          if (this.state.turn > MAX_TURNS_SAFETY || this.state.emptyDeckTurnCounter >= 12) {
+            this.state.result = {
+              winnerTeam: '平局',
+              winnerPlayerIds: [],
+              reason:
+                this.state.emptyDeckTurnCounter >= 12
+                  ? '牌堆耗尽且无牌可摸，触发平局保护。'
+                  : '回合数达到上限，触发平局保护。',
+              totalTurns: this.state.turn
+            };
+            this.state.phase = 'gameover';
+            this.log('gameover', this.state.result.reason);
+            return;
+          }
+
+          yield* this.runPlayerTurn(current);
+          if (this.state.result) return;
+        }
+      }
+
+      // Advance to next seat
+      this.state.activePlayerIndex =
+        (this.state.activePlayerIndex + 1) % this.state.players.length;
+      if (this.state.activePlayerIndex === firstSeatIdx) {
+        this.state.round += 1;
+      }
+    }
+  }
+
+  private *runPlayerTurn(player: PlayerState): EngineGenerator {
+    this.state.skippedPhases = [];
+    this.state.nullificationSkipByPlayer = {};
+    this.state.tableCards = [];
+    player.slashUsedThisTurn = 0;
+    player.drunk = false;
+    player.drunkUsedThisTurn = 0;
+    player.woodenOxUsedThisTurn = false;
+
+    const isFirstTurn = !this.firstTurnDone.has(player.id);
+    this.firstTurnDone.add(player.id);
+
+    this.log('turn', `=== 第 ${this.state.turn} 回合：${player.name}（${player.generalName}）===`, player.id);
+    yield* this.fireTrigger('TurnStart', { playerId: player.id });
+    if (this.state.result || !player.alive) return;
+
+    for (const phase of TURN_PHASES) {
+      if (this.state.result || !player.alive) return;
+      this.state.phase = phase;
+      yield* this.fireTrigger('PhaseBefore', { playerId: player.id, phase });
+      if (this.state.result || !player.alive) return;
+
+      if (this.state.skippedPhases.includes(phase)) {
+        this.log('phase', `${player.name} 跳过了 ${this.phaseLabel(phase)}`, player.id);
+        continue;
+      }
+
+      yield* this.fireTrigger('PhaseStart', { playerId: player.id, phase });
+      if (this.state.result || !player.alive) return;
+
+      switch (phase) {
+        case 'prepare':
+          break;
+        case 'judge':
+          yield* this.runJudgePhase(player);
+          break;
+        case 'draw':
+          yield* this.runDrawPhase(player, isFirstTurn);
+          break;
+        case 'play':
+          yield* this.runPlayPhase(player);
+          break;
+        case 'discard':
+          yield* this.runDiscardPhase(player);
+          break;
+        case 'finish':
+          break;
+      }
+
+      if (this.state.result || !player.alive) return;
+      yield* this.fireTrigger('PhaseEnd', { playerId: player.id, phase });
+    }
+
+    player.drunk = false;
+    player.slashUsedThisTurn = 0;
+    player.drunkUsedThisTurn = 0;
+    player.woodenOxUsedThisTurn = false;
+    yield* this.fireTrigger('TurnEnd', { playerId: player.id });
+  }
+
+  private phaseLabel(phase: TurnPhase): string {
+    const map: Record<TurnPhase, string> = {
+      prepare: '准备阶段',
+      judge: '判定阶段',
+      draw: '摸牌阶段',
+      play: '出牌阶段',
+      discard: '弃牌阶段',
+      finish: '结束阶段'
+    };
+    return map[phase];
+  }
+
+  private *runJudgePhase(player: PlayerState): EngineGenerator {
+    // LIFO order: resolve from the end of judgeZone
+    while (player.judgeZone.length > 0 && player.alive && !this.state.result) {
+      const delayedCard = player.judgeZone.pop()!;
+      this.pushTableCard(delayedCard, player.id, '延时锦囊');
+      this.log('judge', `${player.name} 判定区的 ${formatCard(delayedCard)} 开始结算`, player.id, undefined, [delayedCard.id]);
+
+      const nullified = yield* this.askNullification(
+        delayedCard.name,
+        player.id,
+        delayedCard,
+        false
+      );
+
+      if (nullified) {
+        this.log('trick', `${player.name} 的 ${formatCard(delayedCard)} 被【无懈可击】抵消`, player.id);
+        if (delayedCard.name === 'lightning') {
+          this.passLightningToNext(player, delayedCard);
+        } else {
+          this.moveToDiscard(delayedCard);
+        }
+        continue;
+      }
+
+      const judgeCard = yield* this.resolveJudge(player.id, delayedCard.displayName);
+
+      if (delayedCard.name === 'indulgence') {
+        this.moveToDiscard(delayedCard);
+        if (judgeCard.suit !== 'heart') {
+          this.state.skippedPhases.push('play');
+          this.log('judge', `【乐不思蜀】判定非红桃，${player.name} 跳过本回合出牌阶段！`, player.id);
+        } else {
+          this.log('judge', `【乐不思蜀】判定红桃，天过！`, player.id);
+        }
+      } else if (delayedCard.name === 'supply_shortage') {
+        this.moveToDiscard(delayedCard);
+        if (judgeCard.suit !== 'club') {
+          this.state.skippedPhases.push('draw');
+          this.log('judge', `【兵粮寸断】判定非梅花，${player.name} 跳过本回合摸牌阶段！`, player.id);
+        } else {
+          this.log('judge', `【兵粮寸断】判定梅花，天过！`, player.id);
+        }
+      } else if (delayedCard.name === 'lightning') {
+        if (judgeCard.suit === 'spade' && judgeCard.rank >= 2 && judgeCard.rank <= 9) {
+          this.moveToDiscard(delayedCard);
+          this.log('judge', `【闪电】判定黑桃 2~9！${player.name} 受到 3 点雷电伤害！`, player.id);
+          yield* this.applyDamage({
+            sourceId: null,
+            targetId: player.id,
+            amount: 3,
+            element: 'thunder',
+            card: delayedCard,
+            isChainDamage: false,
+            prevented: false,
+            armorIgnored: false,
+            wasChainedBeforeDeduct: player.chained,
+            actualDeducted: 0
+          });
+        } else {
+          this.log('judge', `【闪电】未劈中，移至下家判定区`, player.id);
+          this.passLightningToNext(player, delayedCard);
+        }
+      } else {
+        this.moveToDiscard(delayedCard);
+      }
+    }
+  }
+
+  private passLightningToNext(fromPlayer: PlayerState, lightningCard: CardInstance): void {
+    const others = getAlivePlayersInOrder(this.state, fromPlayer.id, false);
+    for (const candidate of others) {
+      if (!candidate.judgeZone.some((c) => c.name === 'lightning')) {
+        candidate.judgeZone.push(lightningCard);
+        return;
+      }
+    }
+    // If every other alive player already has Lightning, return to self if alive, else discard
+    if (fromPlayer.alive && !fromPlayer.judgeZone.some((c) => c.name === 'lightning')) {
+      fromPlayer.judgeZone.push(lightningCard);
+    } else {
+      this.moveToDiscard(lightningCard);
+    }
+  }
+
+  private *runDrawPhase(player: PlayerState, isFirstTurn: boolean): EngineGenerator {
+    const base = this.modeRules.getDrawPhaseCount(this.state, player, isFirstTurn);
+    const delta = this.modifiers.getDrawCountDelta(this.state, player);
+    const count = Math.max(0, base + delta);
+    const drawn = this.drawForPlayer(player.id, count);
+    this.log('draw', `${player.name} 摸了 ${drawn.length} 张牌`, player.id);
+    yield* this.fireTrigger('DrawCards', { playerId: player.id, drawCount: drawn.length });
+  }
+
+  private *runPlayPhase(player: PlayerState): EngineGenerator {
+    while (player.alive && !this.state.result) {
+      const playableInfos = getAllPlayableCards(this.state, player.id, this.modifiers);
+      const playableCardIds = playableInfos.map((i) => i.cardId);
+      const canRecastCardIds = playableInfos
+        .filter((i) => i.canRecast)
+        .map((i) => i.cardId);
+      const canUseSerpent = canUseSerpentSpearInPlay(this.state, player.id, this.modifiers);
+      const canUseOx = canUseWoodenOxInPlay(this.state, player.id);
+
+      const response = yield* this.ask({
+        type: 'play_action',
+        promptId: this.nextPromptId(),
+        playerId: player.id,
+        message: `${player.name} 出牌阶段`,
+        playableCardIds,
+        canRecastCardIds,
+        canUseSerpentSpear: canUseSerpent,
+        canUseWoodenOx: canUseOx,
+        usableSkillIds: []
+      });
+
+      if (response.type !== 'play_action') {
+        break;
+      }
+
+      const action = response.action;
+      if (action.type === 'end_play_phase') {
+        this.log('phase', `${player.name} 结束出牌阶段`, player.id);
+        break;
+      }
+
+      if (action.type === 'serpent_spear') {
+        if (!canUseSerpentSpearInPlay(this.state, player.id, this.modifiers)) continue;
+        const [id1, id2] = action.cardIds;
+        if (id1 === id2) continue;
+        const targetIds = action.targetIds.filter((tid) =>
+          isInAttackRange(this.state, player.id, tid, this.modifiers)
+        );
+        if (targetIds.length === 0) continue;
+
+        const c1 = removeUsableCard(player, id1);
+        const c2 = removeUsableCard(player, id2);
+        if (!c1 || !c2) {
+          if (c1) player.hand.push(c1);
+          if (c2) player.hand.push(c2);
+          continue;
+        }
+        this.pushTableCard(c1, player.id, '丈八蛇矛');
+        this.pushTableCard(c2, player.id, '丈八蛇矛');
+        this.moveToDiscard(c1);
+        this.moveToDiscard(c2);
+
+        const virtualSlash = buildSerpentSpearVirtualSlash([c1, c2]);
+        player.slashUsedThisTurn += 1;
+        player.stats.cardsPlayed += 1;
+        const targets = targetIds.map((tid) => this.getPlayer(tid));
+        this.log(
+          'play',
+          `${player.name} 发动【丈八蛇矛】将 ${formatCard(c1)} + ${formatCard(c2)} 当【杀】对 ${targets.map((t) => t.name).join('、')} 使用`,
+          player.id,
+          targetIds,
+          [c1.id, c2.id]
+        );
+        yield* this.resolveSlash(player, targets, virtualSlash, {
+          countTowardLimit: false,
+          useDrunkBonus: true
+        });
+        continue;
+      }
+
+      if (action.type === 'wooden_ox_stash') {
+        if (!canUseWoodenOxInPlay(this.state, player.id)) continue;
+        const handIdx = player.hand.findIndex((c) => c.id === action.cardId);
+        if (handIdx === -1) continue;
+        const stashed = player.hand.splice(handIdx, 1)[0];
+        player.woodenOxCards.push(stashed);
+        player.woodenOxUsedThisTurn = true;
+        this.log('equip', `${player.name} 发动【木牛流马】扣置了一张手牌（当前 ${player.woodenOxCards.length} 张）`, player.id);
+
+        if (action.transferTargetId && action.transferTargetId !== player.id) {
+          const target = this.state.players.find(
+            (p) => p.id === action.transferTargetId && p.alive
+          );
+          if (target && player.equips.treasure?.name === 'wooden_ox') {
+            const oxCard = player.equips.treasure;
+            const movedStash = player.woodenOxCards.splice(0, player.woodenOxCards.length);
+            player.equips.treasure = null;
+            // Replace target's existing treasure if any
+            if (target.equips.treasure) {
+              const oldTargetTreasure = target.equips.treasure;
+              target.equips.treasure = null;
+              this.moveToDiscard(oldTargetTreasure);
+              if (oldTargetTreasure.name === 'wooden_ox') {
+                for (const c of target.woodenOxCards.splice(0)) {
+                  this.moveToDiscard(c);
+                }
+              }
+              yield* this.fireTrigger('EquipLost', {
+                playerId: target.id,
+                lostEquip: oldTargetTreasure
+              });
+            }
+            target.equips.treasure = oxCard;
+            target.woodenOxCards.push(...movedStash);
+            this.log(
+              'equip',
+              `${player.name} 将【木牛流马】（含 ${movedStash.length} 张扣置牌）移动至 ${target.name} 的装备区`,
+              player.id,
+              [target.id],
+              [oxCard.id]
+            );
+          }
+        }
+        continue;
+      }
+
+      if (action.type === 'play_card') {
+        const cardObj = getUsableCards(player).find((c) => c.id === action.cardId);
+        if (!cardObj) continue;
+        const info = getPlayableCardInfo(this.state, player.id, cardObj, this.modifiers);
+        if (!info) continue;
+
+        yield* this.executePlayCard(player, cardObj, info, action);
+      }
+    }
+  }
+
+  private *executePlayCard(
+    player: PlayerState,
+    card: CardInstance,
+    info: PlayableCardInfo,
+    action: {
+      cardId: number;
+      targetIds?: string[];
+      secondaryTargetId?: string;
+      asFireSlash?: boolean;
+      recast?: boolean;
+    }
+  ): EngineGenerator {
+    // Handle Iron Chain Recast (重铸)
+    if (card.name === 'iron_chain' && action.recast) {
+      const removed = removeUsableCard(player, card.id);
+      if (!removed) return;
+      this.pushTableCard(removed, player.id, '重铸');
+      this.moveToDiscard(removed);
+      this.drawForPlayer(player.id, 1);
+      player.stats.cardsPlayed += 1;
+      this.log('play', `${player.name} 重铸了 ${formatCard(removed)}，摸了一张牌`, player.id, undefined, [removed.id]);
+      return;
+    }
+
+    // Validate targets if needed
+    const chosenTargetIds = action.targetIds ?? [];
+    if (info.needsTarget) {
+      if (
+        chosenTargetIds.length < info.minTargets ||
+        chosenTargetIds.length > info.maxTargets ||
+        !chosenTargetIds.every((id) => info.eligibleTargetIds.includes(id))
+      ) {
+        return;
+      }
+    }
+
+    // Remove card from hand or woodenOxCards
+    const removed = removeUsableCard(player, card.id);
+    if (!removed) return;
+    player.stats.cardsPlayed += 1;
+
+    // 1. Equipment
+    if (removed.category === 'equip') {
+      const slot = getEquipSlot(removed)!;
+      const oldEquip = player.equips[slot];
+      player.equips[slot] = removed;
+      this.log('equip', `${player.name} 装备了 ${formatCard(removed)}`, player.id, undefined, [removed.id]);
+      if (oldEquip) {
+        this.moveToDiscard(oldEquip);
+        if (slot === 'treasure' && oldEquip.name === 'wooden_ox') {
+          for (const oxCard of player.woodenOxCards.splice(0)) {
+            this.moveToDiscard(oxCard);
+          }
+        }
+        yield* this.fireTrigger('EquipLost', { playerId: player.id, lostEquip: oldEquip });
+      }
+      return;
+    }
+
+    // 2. Delayed Tricks (placed directly into target's judgeZone, NOT discard pile!)
+    if (removed.subtype === 'delayed_trick') {
+      const target =
+        removed.name === 'lightning' ? player : this.getPlayer(chosenTargetIds[0]);
+      target.judgeZone.push(removed);
+      this.log(
+        'play',
+        `${player.name} 对 ${target.name} 使用了延时锦囊 ${formatCard(removed)}`,
+        player.id,
+        [target.id],
+        [removed.id]
+      );
+      return;
+    }
+
+    // 3. Basic Cards
+    if (isSlashCardName(removed.name)) {
+      this.pushTableCard(removed, player.id);
+      this.moveToDiscard(removed);
+      player.slashUsedThisTurn += 1;
+
+      let virtualSlash = toVirtualCard(removed);
+      // 朱雀羽扇: optionally convert normal Slash to Fire Slash
+      if (removed.name === 'slash' && player.equips.weapon?.name === 'fan') {
+        let convert = Boolean(action.asFireSlash);
+        if (action.asFireSlash === undefined) {
+          const opt = yield* this.ask({
+            type: 'choose_option',
+            promptId: this.nextPromptId(),
+            playerId: player.id,
+            reason: 'fan',
+            message: '是否发动【朱雀羽扇】，将此普通【杀】转为【火杀】使用？',
+            options: [
+              { id: 'yes', label: '转为【火杀】' },
+              { id: 'no', label: '保持普通【杀】' }
+            ]
+          });
+          convert = opt.type === 'choose_option' && opt.optionId === 'yes';
+        }
+        if (convert) {
+          virtualSlash = toVirtualCard(removed, 'fire_slash', 'fire');
+          this.log('equip', `${player.name} 发动【朱雀羽扇】，将【杀】转化为【火杀】！`, player.id);
+        }
+      }
+
+      // Sort targets in CCW order from player
+      const orderedAlive = getAlivePlayersInOrder(this.state, player.id, false);
+      const targets = orderedAlive.filter((p) => chosenTargetIds.includes(p.id));
+      this.log(
+        'play',
+        `${player.name} 对 ${targets.map((t) => t.name).join('、')} 使用了 ${formatCard(virtualSlash)}`,
+        player.id,
+        targets.map((t) => t.id),
+        [removed.id]
+      );
+      yield* this.resolveSlash(player, targets, virtualSlash, {
+        countTowardLimit: false,
+        useDrunkBonus: true
+      });
+      return;
+    }
+
+    if (removed.name === 'peach') {
+      this.pushTableCard(removed, player.id);
+      this.moveToDiscard(removed);
+      const healed = this.healPlayer(player.id, 1);
+      this.log(
+        'heal',
+        `${player.name} 使用了 ${formatCard(removed)}，回复 ${healed} 点体力（HP ${player.hp}/${player.maxHp}）`,
+        player.id,
+        [player.id],
+        [removed.id]
+      );
+      return;
+    }
+
+    if (removed.name === 'alcohol') {
+      this.pushTableCard(removed, player.id);
+      this.moveToDiscard(removed);
+      player.drunk = true;
+      player.drunkUsedThisTurn += 1;
+      this.log('play', `${player.name} 使用了 ${formatCard(removed)}，本回合下一张【杀】伤害+1`, player.id, undefined, [removed.id]);
+      return;
+    }
+
+    // 4. Normal Tricks
+    this.pushTableCard(removed, player.id);
+    this.moveToDiscard(removed);
+    yield* this.fireTrigger('CardUsed', { playerId: player.id, card: removed });
+    yield* this.resolveNormalTrick(player, removed, chosenTargetIds, action.secondaryTargetId);
+  }
+
+  private *resolveSlash(
+    attacker: PlayerState,
+    targets: PlayerState[],
+    slashCard: VirtualCard,
+    options: { countTowardLimit: boolean; useDrunkBonus: boolean }
+  ): EngineGenerator {
+    if (options.countTowardLimit) {
+      attacker.slashUsedThisTurn += 1;
+    }
+    const baseDamage = options.useDrunkBonus && attacker.drunk ? 2 : 1;
+    if (options.useDrunkBonus && attacker.drunk) {
+      attacker.drunk = false;
+    }
+
+    for (const target of targets) {
+      if (!target.alive || this.state.result) continue;
+
+      const armorIgnored = this.modifiers.isArmorIgnored(
+        this.state,
+        attacker,
+        target,
+        slashCard
+      );
+
+      // 雌雄双股剑: opposite gender triggers target choose discard 1 or attacker draw 1
+      if (
+        attacker.alive &&
+        attacker.equips.weapon?.name === 'double_swords' &&
+        attacker.gender !== target.gender
+      ) {
+        const triggerOpt = yield* this.ask({
+          type: 'choose_option',
+          promptId: this.nextPromptId(),
+          playerId: attacker.id,
+          reason: 'double_swords',
+          message: `是否对异性角色 ${target.name} 发动【雌雄双股剑】？`,
+          options: [
+            { id: 'yes', label: '发动【雌雄双股剑】' },
+            { id: 'no', label: '不发动' }
+          ]
+        });
+        if (triggerOpt.type === 'choose_option' && triggerOpt.optionId === 'yes') {
+          this.log('equip', `${attacker.name} 对 ${target.name} 发动【雌雄双股剑】`, attacker.id, [target.id]);
+          if (target.hand.length === 0) {
+            this.drawForPlayer(attacker.id, 1);
+            this.log('draw', `${target.name} 无手牌，${attacker.name} 摸了一张牌`, attacker.id);
+          } else {
+            const targetChoice = yield* this.ask({
+              type: 'choose_option',
+              promptId: this.nextPromptId(),
+              playerId: target.id,
+              reason: 'double_swords_choice',
+              message: `${attacker.name} 发动了【雌雄双股剑】，请选择：`,
+              options: [
+                { id: 'discard', label: '弃置自己一张手牌' },
+                { id: 'let_draw', label: `令 ${attacker.name} 摸一张牌` }
+              ]
+            });
+            if (targetChoice.type === 'choose_option' && targetChoice.optionId === 'discard') {
+              const cardPick = yield* this.ask({
+                type: 'choose_card',
+                promptId: this.nextPromptId(),
+                playerId: target.id,
+                reason: 'discard_double_swords',
+                message: '请选择弃置一张手牌',
+                minCount: 1,
+                maxCount: 1,
+                eligibleCardIds: target.hand.map((c) => c.id),
+                optional: false
+              });
+              const cid =
+                cardPick.type === 'choose_card' && cardPick.cardIds[0]
+                  ? cardPick.cardIds[0]
+                  : target.hand[0].id;
+              const removed = removeUsableCard(target, cid);
+              if (removed) {
+                this.moveToDiscard(removed);
+                this.log('discard', `${target.name} 弃置了 ${formatCard(removed)}`, target.id, undefined, [removed.id]);
+              }
+            } else {
+              this.drawForPlayer(attacker.id, 1);
+              this.log('draw', `${target.name} 选择让 ${attacker.name} 摸了一张牌`, attacker.id);
+            }
+          }
+        }
+      }
+
+      // 仁王盾: Black Slash is ineffective unless armor ignored
+      if (
+        !armorIgnored &&
+        target.equips.armor?.name === 'renwang_shield' &&
+        slashCard.color === 'black'
+      ) {
+        this.log('equip', `${target.name} 的【仁王盾】生效，黑色【杀】无效！`, target.id);
+        continue;
+      }
+
+      // 藤甲: Normal Slash is ineffective unless armor ignored
+      if (
+        !armorIgnored &&
+        target.equips.armor?.name === 'vine_armor' &&
+        slashCard.element === 'normal'
+      ) {
+        this.log('equip', `${target.name} 的【藤甲】生效，普通【杀】无效！`, target.id);
+        continue;
+      }
+
+      // Ask target for Dodge (supports Eight Trigrams!)
+      const dodged = yield* this.askDodge(target, attacker, slashCard, armorIgnored);
+      if (this.state.result) return;
+
+      let forcedHit = false;
+      if (dodged) {
+        yield* this.fireTrigger('SlashMissed', { playerId: attacker.id });
+
+        // 贯石斧: discard 2 other cards (excluding Axe itself) to force hit
+        if (attacker.alive && attacker.equips.weapon?.name === 'axe') {
+          const axeId = attacker.equips.weapon.id;
+          const eligibleCards = [
+            ...getUsableCards(attacker),
+            ...getEquippedCards(attacker).filter((e) => e.id !== axeId)
+          ];
+          if (eligibleCards.length >= 2) {
+            const axeResp = yield* this.ask({
+              type: 'choose_card',
+              promptId: this.nextPromptId(),
+              playerId: attacker.id,
+              reason: 'discard_axe',
+              message: `是否发动【贯石斧】，弃置两张牌令此【杀】强制造成伤害？`,
+              minCount: 2,
+              maxCount: 2,
+              eligibleCardIds: eligibleCards.map((c) => c.id),
+              optional: true
+            });
+            if (
+              axeResp.type === 'choose_card' &&
+              !axeResp.cancelled &&
+              axeResp.cardIds.length === 2
+            ) {
+              const uniqueIds = Array.from(new Set(axeResp.cardIds));
+              if (uniqueIds.length === 2) {
+                for (const cid of uniqueIds) {
+                  const rem = removeHandOrEquipCard(attacker, cid);
+                  if (rem) {
+                    this.moveToDiscard(rem.card);
+                    for (const ox of rem.lostWoodenOxStash) this.moveToDiscard(ox);
+                    if (rem.wasEquip) {
+                      yield* this.fireTrigger('EquipLost', {
+                        playerId: attacker.id,
+                        lostEquip: rem.card
+                      });
+                    }
+                  }
+                }
+                this.log('equip', `${attacker.name} 发动【贯石斧】弃置两张牌，强制命中 ${target.name}！`, attacker.id, [target.id]);
+                forcedHit = true;
+              }
+            }
+          }
+        }
+
+        // 青龙偃月刀: follow-up Slash on the same target!
+        if (!forcedHit && attacker.alive && target.alive && attacker.equips.weapon?.name === 'blade') {
+          const slashCards = getUsableCards(attacker).filter((c) => isSlashCardName(c.name));
+          if (slashCards.length > 0) {
+            const bladeResp = yield* this.ask({
+              type: 'choose_card',
+              promptId: this.nextPromptId(),
+              playerId: attacker.id,
+              reason: 'slash_blade',
+              message: `【青龙偃月刀】：是否对 ${target.name} 再使用一张【杀】？`,
+              minCount: 1,
+              maxCount: 1,
+              eligibleCardIds: slashCards.map((c) => c.id),
+              optional: true
+            });
+            if (
+              bladeResp.type === 'choose_card' &&
+              !bladeResp.cancelled &&
+              bladeResp.cardIds.length === 1
+            ) {
+              const followCard = removeUsableCard(attacker, bladeResp.cardIds[0]);
+              if (followCard) {
+                this.pushTableCard(followCard, attacker.id, '青龙追杀');
+                this.moveToDiscard(followCard);
+                this.log(
+                  'equip',
+                  `${attacker.name} 发动【青龙偃月刀】对 ${target.name} 追杀 ${formatCard(followCard)}`,
+                  attacker.id,
+                  [target.id],
+                  [followCard.id]
+                );
+                yield* this.resolveSlash(attacker, [target], toVirtualCard(followCard), {
+                  countTowardLimit: false,
+                  useDrunkBonus: false
+                });
+              }
+            }
+          }
+        }
+      }
+
+      if (!dodged || forcedHit) {
+        yield* this.applyDamage({
+          sourceId: attacker.alive ? attacker.id : null,
+          targetId: target.id,
+          amount: baseDamage,
+          element: slashCard.element,
+          card: slashCard,
+          isChainDamage: false,
+          prevented: false,
+          armorIgnored,
+          wasChainedBeforeDeduct: target.chained,
+          actualDeducted: 0
+        });
+      }
+    }
+  }
+
+  private *askDodge(
+    target: PlayerState,
+    source: PlayerState,
+    sourceCard: CardInstance | VirtualCard,
+    armorIgnored: boolean
+  ): Generator<PromptRequest, boolean, PlayerResponse> {
+    // 1. 八卦阵 (Eight Trigrams)
+    if (!armorIgnored && target.equips.armor?.name === 'eight_trigrams') {
+      const opt = yield* this.ask({
+        type: 'choose_option',
+        promptId: this.nextPromptId(),
+        playerId: target.id,
+        reason: 'eight_trigrams',
+        message: `面对 ${source.name} 的 ${formatCard(sourceCard)}，是否发动【八卦阵】进行判定？`,
+        options: [
+          { id: 'yes', label: '发动【八卦阵】判定' },
+          { id: 'no', label: '不发动' }
+        ]
+      });
+      if (opt.type === 'choose_option' && opt.optionId === 'yes') {
+        const judgeCard = yield* this.resolveJudge(target.id, '八卦阵');
+        if (getCardColor(judgeCard.suit) === 'red') {
+          this.log('equip', `${target.name} 【八卦阵】判定红色，视为打出【闪】！`, target.id);
+          return true;
+        }
+        this.log('equip', `${target.name} 【八卦阵】判定黑色，未生效`, target.id);
+      }
+    }
+
+    // 2. Ask for Dodge card from hand or Wooden Ox
+    const dodges = getUsableCards(target).filter((c) => c.name === 'dodge');
+    if (dodges.length === 0) return false;
+
+    const resp = yield* this.ask({
+      type: 'choose_card',
+      promptId: this.nextPromptId(),
+      playerId: target.id,
+      reason: 'dodge',
+      message: `请打出一张【闪】抵消 ${source.name} 的 ${formatCard(sourceCard)}`,
+      minCount: 1,
+      maxCount: 1,
+      eligibleCardIds: dodges.map((c) => c.id),
+      optional: true
+    });
+
+    if (resp.type === 'choose_card' && !resp.cancelled && resp.cardIds.length === 1) {
+      const card = removeUsableCard(target, resp.cardIds[0]);
+      if (card) {
+        this.pushTableCard(card, target.id, '闪避');
+        this.moveToDiscard(card);
+        this.log('respond', `${target.name} 打出了 ${formatCard(card)}`, target.id, undefined, [card.id]);
+        yield* this.fireTrigger('CardResponded', { playerId: target.id, card });
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Asks a player to play a Slash (for Duel, Savage Assault, Collateral).
+   * Supports Serpent Spear (丈八蛇矛) 2-card virtual Slash seamlessly!
+   */
+  private *askSlashResponse(
+    responder: PlayerState,
+    reason: 'slash_duel' | 'slash_savage' | 'slash_collateral',
+    message: string
+  ): Generator<PromptRequest, VirtualCard | null, PlayerResponse> {
+    const usable = getUsableCards(responder);
+    const slashes = usable.filter((c) => isSlashCardName(c.name));
+    const canSpear =
+      responder.equips.weapon?.name === 'serpent_spear' && usable.length >= 2;
+
+    if (slashes.length === 0 && !canSpear) {
+      return null;
+    }
+
+    const resp = yield* this.ask({
+      type: 'choose_card',
+      promptId: this.nextPromptId(),
+      playerId: responder.id,
+      reason,
+      message,
+      minCount: 1,
+      maxCount: canSpear ? 2 : 1,
+      eligibleCardIds: canSpear ? usable.map((c) => c.id) : slashes.map((c) => c.id),
+      optional: true,
+      canUseSerpentSpear: canSpear
+    });
+
+    if (resp.type !== 'choose_card' || resp.cancelled) return null;
+
+    if (resp.useSerpentSpear && canSpear && resp.cardIds.length === 2) {
+      const [id1, id2] = resp.cardIds;
+      if (id1 === id2) return null;
+      const c1 = removeUsableCard(responder, id1);
+      const c2 = removeUsableCard(responder, id2);
+      if (!c1 || !c2) {
+        if (c1) responder.hand.push(c1);
+        if (c2) responder.hand.push(c2);
+        return null;
+      }
+      this.pushTableCard(c1, responder.id, '丈八响应');
+      this.pushTableCard(c2, responder.id, '丈八响应');
+      this.moveToDiscard(c1);
+      this.moveToDiscard(c2);
+      const vs = buildSerpentSpearVirtualSlash([c1, c2]);
+      this.log(
+        'respond',
+        `${responder.name} 发动【丈八蛇矛】打出 ${formatCard(c1)} + ${formatCard(c2)} 当【杀】`,
+        responder.id,
+        undefined,
+        [c1.id, c2.id]
+      );
+      return vs;
+    }
+
+    if (resp.cardIds.length === 1) {
+      const chosen = slashes.find((c) => c.id === resp.cardIds[0]);
+      if (!chosen) return null;
+      const removed = removeUsableCard(responder, chosen.id);
+      if (!removed) return null;
+      this.pushTableCard(removed, responder.id, '响应出杀');
+      this.moveToDiscard(removed);
+      this.log('respond', `${responder.name} 打出了 ${formatCard(removed)}`, responder.id, undefined, [removed.id]);
+      yield* this.fireTrigger('CardResponded', { playerId: responder.id, card: removed });
+      return toVirtualCard(removed);
+    }
+
+    return null;
+  }
+
+  /**
+   * Nested Nullification (无懈可击) chain:
+   * - Broadcasts CCW from current turn player.
+   * - Supports arbitrary-depth counter-nullification (套娃).
+   * - If a Nullification is itself countered, continues asking if anyone else wants to Nullify the outer trick!
+   */
+  private *askNullification(
+    trickName: string,
+    targetId: string,
+    trickCard: CardInstance,
+    isCounteringNullification: boolean,
+    depth = 0
+  ): Generator<PromptRequest, boolean, PlayerResponse> {
+    if (depth > 16) return false;
+    const activePlayer = this.state.players[this.state.activePlayerIndex];
+    const targetPlayer = this.getPlayer(targetId);
+    const trickKey = `${trickName}`;
+
+    // Repeat loop if someone's Nullification gets countered (allowing another Nullification)
+    while (!this.state.result) {
+      let someonePlayedAndGotCountered = false;
+      const order = getAlivePlayersInOrder(this.state, activePlayer.id, true);
+
+      for (const p of order) {
+        const nullCards = getUsableCards(p).filter((c) => c.name === 'nullification');
+        if (nullCards.length === 0) continue;
+
+        // Respect per-turn quick-skip preference (only for non-counter prompts)
+        const skippedList = this.state.nullificationSkipByPlayer[p.id] ?? [];
+        if (!isCounteringNullification && skippedList.includes(trickKey)) {
+          continue;
+        }
+
+        const label = isCounteringNullification
+          ? `是否使用【无懈可击】反制 ${targetPlayer.name} 的【无懈可击】？`
+          : `是否使用【无懈可击】抵消对 ${targetPlayer.name} 生效的 ${formatCard(trickCard)}？`;
+
+        const resp = yield* this.ask({
+          type: 'choose_card',
+          promptId: this.nextPromptId(),
+          playerId: p.id,
+          reason: 'nullification',
+          message: label,
+          minCount: 1,
+          maxCount: 1,
+          eligibleCardIds: nullCards.map((c) => c.id),
+          optional: true,
+          trickKeyForQuickSkip: isCounteringNullification ? undefined : trickKey
+        });
+
+        if (resp.type === 'choose_card' && resp.skipSimilarTrickThisTurn && !isCounteringNullification) {
+          this.state.nullificationSkipByPlayer[p.id] = [...skippedList, trickKey];
+        }
+
+        if (resp.type === 'choose_card' && !resp.cancelled && resp.cardIds.length === 1) {
+          const nc = removeUsableCard(p, resp.cardIds[0]);
+          if (nc) {
+            this.pushTableCard(nc, p.id, '无懈可击');
+            this.moveToDiscard(nc);
+            p.stats.cardsPlayed += 1;
+            this.log(
+              'trick',
+              `${p.name} 对 ${isCounteringNullification ? `${targetPlayer.name} 的【无懈可击】` : `${targetPlayer.name} 的 ${formatCard(trickCard)}`} 使用了 ${formatCard(nc)}！`,
+              p.id,
+              [targetPlayer.id],
+              [nc.id]
+            );
+            const countered = yield* this.askNullification(
+              'nullification',
+              p.id,
+              nc,
+              true,
+              depth + 1
+            );
+            if (!countered) {
+              return true;
+            }
+            // Countered! Restart asking for the outer trick
+            someonePlayedAndGotCountered = true;
+            break;
+          }
+        }
+      }
+
+      if (!someonePlayedAndGotCountered) {
+        return false;
+      }
+    }
+    return false;
+  }
+
+  private *resolveNormalTrick(
+    actor: PlayerState,
+    card: CardInstance,
+    targetIds: string[],
+    secondaryTargetId?: string
+  ): EngineGenerator {
+    switch (card.name) {
+      case 'ex_nihilo': {
+        this.log('play', `${actor.name} 使用了 ${formatCard(card)}`, actor.id, [actor.id], [card.id]);
+        const nullified = yield* this.askNullification('ex_nihilo', actor.id, card, false);
+        if (!nullified && actor.alive) {
+          const drawn = this.drawForPlayer(actor.id, 2);
+          this.log('draw', `${actor.name} 【无中生有】摸了 ${drawn.length} 张牌`, actor.id);
+        }
+        return;
+      }
+
+      case 'dismantle':
+      case 'snatch': {
+        const target = this.getPlayer(targetIds[0]);
+        this.log('play', `${actor.name} 对 ${target.name} 使用了 ${formatCard(card)}`, actor.id, [target.id], [card.id]);
+        const nullified = yield* this.askNullification(card.name, target.id, card, false);
+        if (nullified || !target.alive || !hasAnyCardInZones(target, true)) return;
+
+        const choices = buildPlayerCardChoices(target, {
+          includeHand: true,
+          includeEquips: true,
+          includeJudge: true
+        });
+        const pick = yield* this.ask({
+          type: 'choose_player_card',
+          promptId: this.nextPromptId(),
+          playerId: actor.id,
+          targetId: target.id,
+          reason: card.name,
+          message: `选择${card.name === 'dismantle' ? '弃置' : '获得'} ${target.name} 区域内的一张牌`,
+          choices
+        });
+        const idx = pick.type === 'choose_player_card' ? pick.choiceIndex : 0;
+        const choice = choices[idx] ?? choices[0];
+        if (!choice) return;
+        const extracted = extractChoiceCard(target, choice);
+        if (!extracted) return;
+
+        if (card.name === 'dismantle') {
+          this.moveToDiscard(extracted.card);
+          this.log('discard', `${actor.name} 弃置了 ${target.name} 的 ${formatCard(extracted.card)}`, actor.id, [target.id], [extracted.card.id]);
+        } else {
+          actor.hand.push(extracted.card);
+          this.log('trick', `${actor.name} 获得了 ${target.name} 的一张牌`, actor.id, [target.id]);
+        }
+        for (const oxCard of extracted.lostWoodenOxStash) {
+          this.moveToDiscard(oxCard);
+        }
+        if (extracted.wasEquip) {
+          yield* this.fireTrigger('EquipLost', { playerId: target.id, lostEquip: extracted.card });
+        }
+        return;
+      }
+
+      case 'duel': {
+        const target = this.getPlayer(targetIds[0]);
+        this.log('play', `${actor.name} 对 ${target.name} 使用了 ${formatCard(card)}`, actor.id, [target.id], [card.id]);
+        const nullified = yield* this.askNullification('duel', target.id, card, false);
+        if (nullified || !target.alive) return;
+
+        let responder = target;
+        let opponent = actor;
+        while (responder.alive && opponent.alive && !this.state.result) {
+          const played = yield* this.askSlashResponse(
+            responder,
+            'slash_duel',
+            `【决斗】：请打出一张【杀】，否则受到 ${opponent.name} 造成的 1 点伤害`
+          );
+          if (!played) {
+            yield* this.applyDamage({
+              sourceId: opponent.alive ? opponent.id : null,
+              targetId: responder.id,
+              amount: 1,
+              element: 'normal',
+              card,
+              isChainDamage: false,
+              prevented: false,
+              armorIgnored: false,
+              wasChainedBeforeDeduct: responder.chained,
+              actualDeducted: 0
+            });
+            return;
+          }
+          // Swap turns
+          const tmp = responder;
+          responder = opponent;
+          opponent = tmp;
+        }
+        return;
+      }
+
+      case 'savage_assault': {
+        this.log('play', `${actor.name} 使用了 ${formatCard(card)}`, actor.id, undefined, [card.id]);
+        const targets = getAlivePlayersInOrder(this.state, actor.id, false);
+        for (const target of targets) {
+          if (!target.alive || this.state.result) continue;
+          if (target.equips.armor?.name === 'vine_armor') {
+            this.log('equip', `${target.name} 的【藤甲】生效，【南蛮入侵】无效！`, target.id);
+            continue;
+          }
+          const nullified = yield* this.askNullification('savage_assault', target.id, card, false);
+          if (nullified || !target.alive) continue;
+
+          const played = yield* this.askSlashResponse(
+            target,
+            'slash_savage',
+            `【南蛮入侵】：请打出一张【杀】，否则受到 ${actor.name} 造成的 1 点伤害`
+          );
+          if (!played) {
+            yield* this.applyDamage({
+              sourceId: actor.alive ? actor.id : null,
+              targetId: target.id,
+              amount: 1,
+              element: 'normal',
+              card,
+              isChainDamage: false,
+              prevented: false,
+              armorIgnored: false,
+              wasChainedBeforeDeduct: target.chained,
+              actualDeducted: 0
+            });
+          }
+        }
+        return;
+      }
+
+      case 'archery_attack': {
+        this.log('play', `${actor.name} 使用了 ${formatCard(card)}`, actor.id, undefined, [card.id]);
+        const targets = getAlivePlayersInOrder(this.state, actor.id, false);
+        for (const target of targets) {
+          if (!target.alive || this.state.result) continue;
+          if (target.equips.armor?.name === 'vine_armor') {
+            this.log('equip', `${target.name} 的【藤甲】生效，【万箭齐发】无效！`, target.id);
+            continue;
+          }
+          const nullified = yield* this.askNullification('archery_attack', target.id, card, false);
+          if (nullified || !target.alive) continue;
+
+          const dodged = yield* this.askDodge(target, actor, card, false);
+          if (!dodged) {
+            yield* this.applyDamage({
+              sourceId: actor.alive ? actor.id : null,
+              targetId: target.id,
+              amount: 1,
+              element: 'normal',
+              card,
+              isChainDamage: false,
+              prevented: false,
+              armorIgnored: false,
+              wasChainedBeforeDeduct: target.chained,
+              actualDeducted: 0
+            });
+          }
+        }
+        return;
+      }
+
+      case 'peach_garden': {
+        this.log('play', `${actor.name} 使用了 ${formatCard(card)}`, actor.id, undefined, [card.id]);
+        const targets = getAlivePlayersInOrder(this.state, actor.id, true);
+        for (const target of targets) {
+          if (!target.alive || target.hp >= target.maxHp || this.state.result) continue;
+          const nullified = yield* this.askNullification('peach_garden', target.id, card, false);
+          if (nullified || !target.alive) continue;
+          const healed = this.healPlayer(target.id, 1);
+          if (healed > 0) {
+            this.log('heal', `${target.name} 响应【桃园结义】回复 1 点体力（HP ${target.hp}/${target.maxHp}）`, target.id);
+          }
+        }
+        return;
+      }
+
+      case 'harvest': {
+        this.log('play', `${actor.name} 使用了 ${formatCard(card)}`, actor.id, undefined, [card.id]);
+        const targets = getAlivePlayersInOrder(this.state, actor.id, true);
+        const revealed = popTopCards(this.state, this.rng, targets.length);
+        this.state.harvestPool = revealed.map((c) => ({ card: c, takenBy: null }));
+
+        for (const target of targets) {
+          if (!target.alive || this.state.result) continue;
+          const remaining = this.state.harvestPool.filter((i) => !i.takenBy);
+          if (remaining.length === 0) break;
+
+          const nullified = yield* this.askNullification('harvest', target.id, card, false);
+          if (nullified || !target.alive) continue;
+
+          const pickResp = yield* this.ask({
+            type: 'choose_harvest_card',
+            promptId: this.nextPromptId(),
+            playerId: target.id,
+            message: '【五谷丰登】：请选择获得一张亮出的牌',
+            pool: this.state.harvestPool.map((item) => ({ ...item }))
+          });
+          const chosenId =
+            pickResp.type === 'choose_harvest_card' ? pickResp.cardId : remaining[0].card.id;
+          const slot =
+            this.state.harvestPool.find((i) => !i.takenBy && i.card.id === chosenId) ??
+            remaining[0];
+          slot.takenBy = target.id;
+          target.hand.push(slot.card);
+          this.log('draw', `${target.name} 从【五谷丰登】获得了 ${formatCard(slot.card)}`, target.id, undefined, [slot.card.id]);
+        }
+
+        // Discard any unpicked cards
+        for (const item of this.state.harvestPool) {
+          if (!item.takenBy) {
+            this.moveToDiscard(item.card);
+          }
+        }
+        this.state.harvestPool = [];
+        return;
+      }
+
+      case 'collateral': {
+        const victim = this.getPlayer(targetIds[0]);
+        const validSecondaries = this.state.players
+          .filter(
+            (s) =>
+              s.alive &&
+              s.id !== victim.id &&
+              isInAttackRange(this.state, victim.id, s.id, this.modifiers)
+          )
+          .map((s) => s.id);
+        let slashTargetId =
+          secondaryTargetId && validSecondaries.includes(secondaryTargetId)
+            ? secondaryTargetId
+            : validSecondaries[0];
+        if (!secondaryTargetId && validSecondaries.length > 1) {
+          const secResp = yield* this.ask({
+            type: 'choose_target',
+            promptId: this.nextPromptId(),
+            playerId: actor.id,
+            reason: 'collateral_secondary',
+            message: `【借刀杀人】：指定 ${victim.name} 攻击范围内的一名出杀目标`,
+            minCount: 1,
+            maxCount: 1,
+            eligibleTargetIds: validSecondaries,
+            optional: false
+          });
+          if (secResp.type === 'choose_target' && secResp.targetIds[0]) {
+            slashTargetId = secResp.targetIds[0];
+          }
+        }
+        if (!slashTargetId) return;
+        const slashTarget = this.getPlayer(slashTargetId);
+
+        this.log(
+          'play',
+          `${actor.name} 对 ${victim.name} 使用 ${formatCard(card)}，令其杀 ${slashTarget.name}`,
+          actor.id,
+          [victim.id, slashTarget.id],
+          [card.id]
+        );
+        const nullified = yield* this.askNullification('collateral', victim.id, card, false);
+        if (nullified || !victim.alive) return;
+
+        const usedSlash = yield* this.askSlashResponse(
+          victim,
+          'slash_collateral',
+          `【借刀杀人】：请对 ${slashTarget.name} 使用一张【杀】，否则将武器交给 ${actor.name}`
+        );
+
+        if (usedSlash) {
+          yield* this.resolveSlash(victim, [slashTarget], usedSlash, {
+            countTowardLimit: false,
+            useDrunkBonus: false
+          });
+        } else if (victim.equips.weapon) {
+          const weapon = victim.equips.weapon;
+          victim.equips.weapon = null;
+          if (actor.alive) {
+            actor.hand.push(weapon);
+            this.log(
+              'equip',
+              `${victim.name} 未出【杀】，将 ${formatCard(weapon)} 交给 ${actor.name}`,
+              victim.id,
+              [actor.id],
+              [weapon.id]
+            );
+          } else {
+            this.moveToDiscard(weapon);
+          }
+          yield* this.fireTrigger('EquipLost', { playerId: victim.id, lostEquip: weapon });
+        }
+        return;
+      }
+
+      case 'iron_chain': {
+        const targets = targetIds.map((id) => this.getPlayer(id));
+        this.log(
+          'play',
+          `${actor.name} 对 ${targets.map((t) => t.name).join('、')} 使用了 ${formatCard(card)}`,
+          actor.id,
+          targetIds,
+          [card.id]
+        );
+        for (const target of targets) {
+          if (!target.alive || this.state.result) continue;
+          const nullified = yield* this.askNullification('iron_chain', target.id, card, false);
+          if (nullified || !target.alive) continue;
+          target.chained = !target.chained;
+          this.log(
+            'trick',
+            `${target.name} ${target.chained ? '横置（进入连环状态）' : '重置（解除连环状态）'}`,
+            target.id
+          );
+        }
+        return;
+      }
+
+      case 'fire_attack': {
+        const target = this.getPlayer(targetIds[0]);
+        this.log('play', `${actor.name} 对 ${target.name} 使用了 ${formatCard(card)}`, actor.id, [target.id], [card.id]);
+        const nullified = yield* this.askNullification('fire_attack', target.id, card, false);
+        if (nullified || !target.alive || target.hand.length === 0) return;
+
+        // Target shows one hand card
+        const showResp = yield* this.ask({
+          type: 'choose_card',
+          promptId: this.nextPromptId(),
+          playerId: target.id,
+          reason: 'fire_attack_show',
+          message: `【火攻】：请选择展示一张手牌`,
+          minCount: 1,
+          maxCount: 1,
+          eligibleCardIds: target.hand.map((c) => c.id),
+          optional: false
+        });
+        const shownId =
+          showResp.type === 'choose_card' && showResp.cardIds[0]
+            ? showResp.cardIds[0]
+            : target.hand[0].id;
+        const shownCard = target.hand.find((c) => c.id === shownId) ?? target.hand[0];
+        this.pushTableCard(shownCard, target.id, '火攻展示');
+        this.log('trick', `${target.name} 展示了 ${formatCard(shownCard)}`, target.id, undefined, [shownCard.id]);
+
+        // Actor may discard a hand card of the same suit to deal 1 fire damage
+        if (!actor.alive) return;
+        const matchingHand = actor.hand.filter((c) => c.suit === shownCard.suit);
+        if (matchingHand.length === 0) {
+          this.log('trick', `${actor.name} 没有 ${getSuitSymbol(shownCard.suit)} 花色手牌，【火攻】未造成伤害`, actor.id);
+          return;
+        }
+
+        const discResp = yield* this.ask({
+          type: 'choose_card',
+          promptId: this.nextPromptId(),
+          playerId: actor.id,
+          reason: 'fire_attack_discard',
+          message: `【火攻】：是否弃置一张 ${getSuitSymbol(shownCard.suit)} 花色手牌，对 ${target.name} 造成 1 点火焰伤害？`,
+          minCount: 1,
+          maxCount: 1,
+          eligibleCardIds: matchingHand.map((c) => c.id),
+          optional: true
+        });
+        if (discResp.type === 'choose_card' && !discResp.cancelled && discResp.cardIds.length === 1) {
+          const discIdx = actor.hand.findIndex((c) => c.id === discResp.cardIds[0]);
+          if (discIdx !== -1) {
+            const discCard = actor.hand.splice(discIdx, 1)[0];
+            this.moveToDiscard(discCard);
+            this.log('discard', `${actor.name} 弃置 ${formatCard(discCard)}，对 ${target.name} 造成 1 点火焰伤害！`, actor.id, [target.id], [discCard.id]);
+            yield* this.applyDamage({
+              sourceId: actor.id,
+              targetId: target.id,
+              amount: 1,
+              element: 'fire',
+              card,
+              isChainDamage: false,
+              prevented: false,
+              armorIgnored: false,
+              wasChainedBeforeDeduct: target.chained,
+              actualDeducted: 0
+            });
+          }
+        }
+        return;
+      }
+
+      default:
+        return;
+    }
+  }
+
+  private *resolveJudge(playerId: string, reason: string): Generator<PromptRequest, CardInstance, PlayerResponse> {
+    const player = this.getPlayer(playerId);
+    const popped = popTopCards(this.state, this.rng, 1);
+    const card = popped[0];
+    if (!card) {
+      // Extreme edge case: every single card in the game is held in players' hands/zones
+      this.state.result = {
+        winnerTeam: '平局',
+        winnerPlayerIds: [],
+        reason: '牌堆与弃牌堆同时耗尽无法判定，触发平局保护。',
+        totalTurns: this.state.turn
+      };
+      this.state.phase = 'gameover';
+      return {
+        id: -1,
+        name: 'slash',
+        displayName: '无牌',
+        suit: 'heart',
+        rank: 1,
+        category: 'basic',
+        subtype: 'basic',
+        pack: 'standard',
+        shortTag: '',
+        description: ''
+      };
+    }
+
+    const ctx: JudgeContext = { playerId, reason, card };
+    this.pushTableCard(ctx.card, playerId, `${reason}判定`);
+    this.log('judge', `${player.name} 进行【${reason}】判定，翻开 ${formatCard(ctx.card)}`, playerId, undefined, [ctx.card.id]);
+
+    // Judge modification chain (司马懿鬼才 / 张角鬼道 in Phase 4)
+    yield* this.fireTrigger('JudgeModify', { playerId, judge: ctx });
+
+    this.moveToDiscard(ctx.card);
+    yield* this.fireTrigger('JudgeResolved', { playerId, judge: ctx });
+    return ctx.card;
+  }
+
+  /**
+   * Authoritative Sanguosha OL 3.0 Damage Settlement Pipeline + Chain Propagation.
+   */
+  private *applyDamage(ctx: DamageContext): EngineGenerator {
+    const target = this.getPlayer(ctx.targetId);
+    if (!target.alive || this.state.result || ctx.amount <= 0) return;
+
+    ctx.wasChainedBeforeDeduct = target.chained;
+
+    yield* this.fireTrigger('DamageBefore', { damage: ctx });
+    if (ctx.prevented || ctx.amount <= 0 || this.state.result) {
+      yield* this.fireTrigger('DamageEnd', { damage: ctx });
+      return;
+    }
+
+    yield* this.fireTrigger('DamageStart', { damage: ctx });
+    if (ctx.prevented || ctx.amount <= 0 || this.state.result) {
+      yield* this.fireTrigger('DamageEnd', { damage: ctx });
+      return;
+    }
+
+    yield* this.fireTrigger('DamageDealt', { damage: ctx });
+    if (ctx.prevented || ctx.amount <= 0 || this.state.result) {
+      yield* this.fireTrigger('DamageEnd', { damage: ctx });
+      return;
+    }
+
+    yield* this.fireTrigger('DamageTaken', { damage: ctx });
+    if (ctx.prevented || ctx.amount <= 0 || this.state.result) {
+      yield* this.fireTrigger('DamageEnd', { damage: ctx });
+      return;
+    }
+
+    // Deduct HP
+    target.hp -= ctx.amount;
+    ctx.actualDeducted = ctx.amount;
+    target.stats.damageTaken += ctx.amount;
+    const source = ctx.sourceId ? this.state.players.find((p) => p.id === ctx.sourceId) : null;
+    if (source) {
+      source.stats.damageDealt += ctx.amount;
+    }
+
+    const elemLabel =
+      ctx.element === 'fire' ? '火焰' : ctx.element === 'thunder' ? '雷电' : '';
+    const chainTag = ctx.isChainDamage ? '（连环传导）' : '';
+    this.log(
+      'damage',
+      `${target.name} 受到${source ? ` ${source.name} 造成的` : '无来源'} ${ctx.amount} 点${elemLabel}伤害${chainTag}（HP ${target.hp}/${target.maxHp}）`,
+      source?.id,
+      [target.id]
+    );
+
+    // Dying check
+    if (target.hp <= 0) {
+      yield* this.resolveDying(target.id, ctx.sourceId);
+      if (this.state.result) return;
+    }
+
+    if (source && source.alive) {
+      yield* this.fireTrigger('AfterDamageDealt', { damage: ctx });
+      if (this.state.result) return;
+    }
+
+    if (target.alive) {
+      yield* this.fireTrigger('AfterDamageTaken', { damage: ctx });
+      if (this.state.result) return;
+    }
+
+    // OL 3.0: Reset chain at DamageEnd if was chained before deduction & elemental damage
+    if (ctx.wasChainedBeforeDeduct && ctx.element !== 'normal' && target.alive) {
+      target.chained = false;
+      this.log('trick', `${target.name} 解除连环状态`, target.id);
+    }
+
+    yield* this.fireTrigger('DamageEnd', { damage: ctx });
+    if (this.state.result) return;
+
+    // OL 3.0 Chain Propagation:
+    // Triggered if non-chain elemental damage hit a chained target (even if target died!),
+    // stopping immediately if game victory has been decided!
+    if (ctx.wasChainedBeforeDeduct && !ctx.isChainDamage && ctx.element !== 'normal') {
+      const activePlayer = this.state.players[this.state.activePlayerIndex];
+      const chainOrder = getAlivePlayersInOrder(this.state, activePlayer.id, true);
+      for (const next of chainOrder) {
+        if (this.state.result) return;
+        if (!next.alive || !next.chained) continue;
+        // Source is null if original source died (OL 3.0 rule!)
+        const effectiveSource =
+          ctx.sourceId && this.getPlayer(ctx.sourceId).alive ? ctx.sourceId : null;
+        yield* this.applyDamage({
+          sourceId: effectiveSource,
+          targetId: next.id,
+          amount: ctx.actualDeducted,
+          element: ctx.element,
+          card: ctx.card,
+          isChainDamage: true,
+          prevented: false,
+          armorIgnored: false,
+          wasChainedBeforeDeduct: true,
+          actualDeducted: 0
+        });
+        if (this.state.result) return;
+      }
+    }
+  }
+
+  private *resolveDying(victimId: string, killerId: string | null): EngineGenerator {
+    const victim = this.getPlayer(victimId);
+    this.log('dying', `${victim.name} 进入濒死状态（HP ${victim.hp}/${victim.maxHp}），请求救援！`, victim.id);
+    yield* this.fireTrigger('DyingStart', { victimId, killerId });
+
+    const activePlayer = this.state.players[this.state.activePlayerIndex];
+
+    while (victim.alive && victim.hp <= 0 && !this.state.result) {
+      let savedThisPass = false;
+      const order = getAlivePlayersInOrder(this.state, activePlayer.id, true);
+
+      for (const helper of order) {
+        if (victim.hp > 0) break;
+        const usable = getUsableCards(helper);
+        const saveCards = usable.filter(
+          (c) => c.name === 'peach' || (helper.id === victim.id && c.name === 'alcohol')
+        );
+        if (saveCards.length === 0) continue;
+
+        const resp = yield* this.ask({
+          type: 'choose_card',
+          promptId: this.nextPromptId(),
+          playerId: helper.id,
+          reason: 'peach_dying',
+          message:
+            helper.id === victim.id
+              ? `你正处于濒死状态（还需 ${1 - victim.hp} 桃/酒），是否使用【桃】或【酒】自救？`
+              : `${victim.name} 正处于濒死状态（还需 ${1 - victim.hp} 桃），是否对其使用【桃】？`,
+          minCount: 1,
+          maxCount: 1,
+          eligibleCardIds: saveCards.map((c) => c.id),
+          optional: true
+        });
+
+        if (resp.type === 'choose_card' && !resp.cancelled && resp.cardIds.length === 1) {
+          const card = removeUsableCard(helper, resp.cardIds[0]);
+          if (card) {
+            this.pushTableCard(card, helper.id, '濒死救援');
+            this.moveToDiscard(card);
+            helper.stats.cardsPlayed += 1;
+            victim.hp += 1;
+            this.log(
+              'heal',
+              `${helper.name} 对 ${victim.name} 使用了 ${formatCard(card)}，回复 1 点体力（HP ${victim.hp}/${victim.maxHp}）`,
+              helper.id,
+              [victim.id],
+              [card.id]
+            );
+            savedThisPass = true;
+            if (victim.hp > 0) break;
+          }
+        }
+      }
+
+      if (!savedThisPass) {
+        break;
+      }
+    }
+
+    if (victim.alive && victim.hp <= 0) {
+      yield* this.killPlayer(victimId, killerId);
+    }
+  }
+
+  private *killPlayer(victimId: string, killerId: string | null): EngineGenerator {
+    const victim = this.getPlayer(victimId);
+    const killer = killerId ? this.state.players.find((p) => p.id === killerId) ?? null : null;
+
+    victim.alive = false;
+    victim.roleRevealed = true;
+    victim.chained = false;
+    victim.flipped = false;
+    victim.drunk = false;
+
+    // Discard all cards belonging to victim
+    for (const c of victim.hand.splice(0)) this.moveToDiscard(c);
+    for (const c of victim.woodenOxCards.splice(0)) this.moveToDiscard(c);
+    for (const c of victim.judgeZone.splice(0)) this.moveToDiscard(c);
+    const slots = ['weapon', 'armor', 'horsePlus', 'horseMinus', 'treasure'] as const;
+    for (const slot of slots) {
+      const eq = victim.equips[slot];
+      if (eq) {
+        victim.equips[slot] = null;
+        this.moveToDiscard(eq);
+      }
+    }
+
+    if (killer && killer.id !== victim.id) {
+      killer.stats.kills += 1;
+    }
+
+    this.log(
+      'death',
+      `${victim.name}（${victim.generalName}，身份：${victim.role}）阵亡！${killer ? `击杀者：${killer.name}` : ''}`,
+      killer?.id,
+      [victim.id]
+    );
+
+    // Immediately check victory BEFORE death rewards! (OL 3.0 rule)
+    const victory = this.modeRules.checkVictory(this.state);
+    if (victory) {
+      this.state.result = victory;
+      this.state.phase = 'gameover';
+      this.log('gameover', victory.reason);
+      return;
+    }
+
+    // Mode death rewards / penalties (e.g., 2v2 teammate draw 1, 5p rebel kill draw 3 / lord kill loyalist discard all)
+    if (this.modeRules.onPlayerDied) {
+      this.modeRules.onPlayerDied(this.state, victim, killer, {
+        drawCards: (pid, cnt) => {
+          this.drawForPlayer(pid, cnt);
+        },
+        discardAllHandAndEquips: (pid) => {
+          const p = this.getPlayer(pid);
+          for (const c of p.hand.splice(0)) this.moveToDiscard(c);
+          for (const c of p.woodenOxCards.splice(0)) this.moveToDiscard(c);
+          for (const slot of slots) {
+            const eq = p.equips[slot];
+            if (eq) {
+              p.equips[slot] = null;
+              this.moveToDiscard(eq);
+            }
+          }
+        },
+        log: (type, message, actorId, targetIds) => this.log(type, message, actorId, targetIds)
+      });
+    }
+
+    yield* this.fireTrigger('PlayerDied', { victimId, killerId });
+  }
+
+  private *runDiscardPhase(player: PlayerState): EngineGenerator {
+    const limit = getHandLimit(this.state, player, this.modifiers);
+    const excess = player.hand.length - limit;
+    if (excess <= 0) return;
+
+    const resp = yield* this.ask({
+      type: 'choose_card',
+      promptId: this.nextPromptId(),
+      playerId: player.id,
+      reason: 'discard_phase',
+      message: `弃牌阶段：当前手牌 ${player.hand.length} 张，手牌上限 ${limit} 张，请弃置 ${excess} 张手牌`,
+      minCount: excess,
+      maxCount: excess,
+      eligibleCardIds: player.hand.map((c) => c.id),
+      optional: false
+    });
+
+    const chosenIds =
+      resp.type === 'choose_card' && resp.cardIds.length === excess
+        ? resp.cardIds
+        : player.hand.slice(0, excess).map((c) => c.id);
+
+    const discardedNames: string[] = [];
+    for (const cid of chosenIds) {
+      const idx = player.hand.findIndex((c) => c.id === cid);
+      if (idx !== -1) {
+        const card = player.hand.splice(idx, 1)[0];
+        this.moveToDiscard(card);
+        discardedNames.push(formatCard(card));
+      }
+    }
+    this.log('discard', `${player.name} 弃置了 ${discardedNames.join('、')}`, player.id, undefined, chosenIds);
+  }
+}
