@@ -336,24 +336,57 @@ export function GameTableView() {
           })}
         </div>
 
-        {/* Right Host Controls: Live Timer Toggle, Debug Reveal, Theme, Rules, Log */}
+        {/* Right Host Controls: Live Timer Toggle + Seconds, AI Speed, Debug Reveal, Theme, Rules, Log */}
         <div className="flex items-center gap-1.5 shrink-0">
-          <button
-            type="button"
-            onClick={() =>
-              updateHostSettings({ timerEnabled: !hostSettings.timerEnabled })
+          <div className="inline-flex items-center rounded-md border border-stone-300 dark:border-stone-700 overflow-hidden">
+            <button
+              type="button"
+              onClick={() =>
+                updateHostSettings({ timerEnabled: !hostSettings.timerEnabled })
+              }
+              title="房主权限：随时开启/关闭操作倒计时"
+              className={[
+                'inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold transition-colors',
+                hostSettings.timerEnabled
+                  ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-200'
+                  : 'text-stone-500'
+              ].join(' ')}
+            >
+              <Clock className="w-3.5 h-3.5" />
+              <span>{hostSettings.timerEnabled ? `${secondsLeft}s` : '计时关'}</span>
+            </button>
+            {hostSettings.timerEnabled && (
+              <select
+                value={hostSettings.timerSeconds}
+                onChange={(e) =>
+                  updateHostSettings({ timerSeconds: Number(e.target.value) })
+                }
+                title="调整每步倒计时秒数"
+                className="text-[11px] font-mono bg-transparent border-l border-stone-300 dark:border-stone-700 px-1 py-1 outline-none"
+              >
+                <option value={10}>10s</option>
+                <option value={15}>15s</option>
+                <option value={20}>20s</option>
+                <option value={30}>30s</option>
+              </select>
+            )}
+          </div>
+
+          <select
+            value={hostSettings.aiSpeed}
+            onChange={(e) =>
+              updateHostSettings({
+                aiSpeed: e.target.value as typeof hostSettings.aiSpeed
+              })
             }
-            title="房主权限：随时开启/关闭操作倒计时"
-            className={[
-              'inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold border transition-colors',
-              hostSettings.timerEnabled
-                ? 'bg-amber-50 dark:bg-amber-950/60 border-amber-400 text-amber-800 dark:text-amber-200'
-                : 'border-stone-300 dark:border-stone-700 text-stone-500'
-            ].join(' ')}
+            title="调整 AI 行动速度"
+            className="hidden sm:block text-[11px] rounded-md border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 px-1.5 py-1"
           >
-            <Clock className="w-3.5 h-3.5" />
-            <span>{hostSettings.timerEnabled ? `计时 ${secondsLeft}s` : '计时关'}</span>
-          </button>
+            <option value="instant">AI极速</option>
+            <option value="fast">AI较快</option>
+            <option value="normal">AI正常</option>
+            <option value="slow">AI慢速</option>
+          </select>
 
           <button
             type="button"

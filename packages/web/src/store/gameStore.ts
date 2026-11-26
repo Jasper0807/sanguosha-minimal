@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import {
+  decideAIAction,
   GameEngine,
   getAllPlayableCards,
   type CardInstance,
@@ -101,7 +102,7 @@ export function buildDefaultSeats(mode: GameMode): SeatConfig[] {
   if (mode === '1v1') {
     return [
       { id: 'p1', name: '主视角玩家', isAI: false },
-      { id: 'p2', name: '对手', isAI: false }
+      { id: 'p2', name: 'AI 对手', isAI: true }
     ];
   }
   if (mode === '2v2') {
@@ -187,7 +188,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   inspectCard: null,
   showRulesModal: false,
   showLogDrawer: true,
-  aiDecider: null,
+  aiDecider: decideAIAction,
 
   toggleTheme: () => {
     const next = get().theme === 'light' ? 'dark' : 'light';

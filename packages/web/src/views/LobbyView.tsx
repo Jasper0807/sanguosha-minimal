@@ -1,4 +1,4 @@
-import type { DeckVariant, GameMode } from '@sgs/engine';
+import type { DeckVariant, GameMode, SeatConfig } from '@sgs/engine';
 import {
   BookOpen,
   Bot,
@@ -244,6 +244,24 @@ export function LobbyView({
                       >
                         {idx === 0 || idx === 3 ? '蓝队' : '红队'}
                       </span>
+                    )}
+                    {mode === 'identity5' && (
+                      <select
+                        value={seat.preferredRole ?? ''}
+                        onChange={(e) =>
+                          updateSeat(idx, {
+                            preferredRole: (e.target.value || undefined) as SeatConfig['preferredRole']
+                          })
+                        }
+                        title="调试指定身份（留空则随机）"
+                        className="text-[11px] rounded border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-800 px-1.5 py-0.5"
+                      >
+                        <option value="">随机身份</option>
+                        <option value="lord">主公</option>
+                        <option value="loyalist">忠臣</option>
+                        <option value="rebel">反贼</option>
+                        <option value="renegade">内奸</option>
+                      </select>
                     )}
                   </div>
 

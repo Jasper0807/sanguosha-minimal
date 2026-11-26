@@ -1,5 +1,10 @@
 import type { GameMode, GameResult, GameState, PlayerState, Role } from '../core/types.js';
 import type { SeededRng } from '../core/rng.js';
+import { mode2v2 } from './mode2v2.js';
+import { modeIdentity5 } from './modeIdentity5.js';
+
+export { mode2v2 } from './mode2v2.js';
+export { modeIdentity5 } from './modeIdentity5.js';
 
 export interface ModeSetupResult {
   roles: Role[];
@@ -66,7 +71,11 @@ export const mode1v1: ModeRuleSet = {
   }
 };
 
-const modeRegistry = new Map<GameMode, ModeRuleSet>([['1v1', mode1v1]]);
+const modeRegistry = new Map<GameMode, ModeRuleSet>([
+  ['1v1', mode1v1],
+  ['2v2', mode2v2],
+  ['identity5', modeIdentity5]
+]);
 
 export function registerModeRuleSet(ruleSet: ModeRuleSet): void {
   modeRegistry.set(ruleSet.mode, ruleSet);

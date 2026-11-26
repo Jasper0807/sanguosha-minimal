@@ -12,7 +12,7 @@ export default function App() {
     <>
       {screen === 'lobby' && (
         <LobbyView
-          availableModes={['1v1']}
+          availableModes={['1v1', '2v2', 'identity5']}
           availableDecks={['standard_ex', 'junzheng_161']}
         />
       )}
