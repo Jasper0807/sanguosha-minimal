@@ -7,7 +7,16 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 5173,
     strictPort: false,
-    allowedHosts: true
+    allowedHosts: true,
+    proxy: {
+      '/ws': {
+        target: 'ws://127.0.0.1:3000',
+        ws: true
+      },
+      '/health': {
+        target: 'http://127.0.0.1:3000'
+      }
+    }
   },
   preview: {
     host: '0.0.0.0',

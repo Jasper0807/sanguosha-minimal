@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import type { DeckVariant, GameMode, SeatConfig } from '@sgs/engine';
 import {
   BookOpen,
@@ -5,23 +6,30 @@ import {
   Clock,
   Dices,
   Eye,
+  Globe,
+  Link2,
+  LogIn,
   Moon,
   Play,
+  PlusCircle,
   Sun,
   Swords,
   User,
   Users
 } from 'lucide-react';
 import { useGameStore, type AISpeed } from '../store/gameStore';
+import { useOnlineStore } from '../store/onlineStore';
 
 interface LobbyViewProps {
   availableModes?: GameMode[];
   availableDecks?: DeckVariant[];
+  initialRoomCode?: string | null;
 }
 
 export function LobbyView({
   availableModes = ['1v1'],
-  availableDecks = ['standard_ex']
+  availableDecks = ['standard_ex'],
+  initialRoomCode = null
 }: LobbyViewProps) {
   const {
     theme,
@@ -43,6 +51,28 @@ export function LobbyView({
     startNewGame,
     setShowRulesModal
   } = useGameStore();
+
+  const {
+    nickname,
+    status: wsStatus,
+    errorMessage: onlineError,
+    setNickname,
+    createRoom,
+    joinRoom,
+    clearError
+  } = useOnlineStore();
+
+  const [lobbyTab, setLobbyTab] = useState<'local' | 'online'>(
+    initialRoomCode ? 'online' : 'local'
+  );
+  const [joinCode, setJoinCode] = useState(initialRoomCode ?? '');
+
+  useEffect(() => {
+    if (initialRoomCode) {
+      setLobbyTab('online');
+      setJoinCode(initialRoomCode);
+    }
+  }, [initialRoomCode]);
 
   const modeCards: { id: GameMode; title: string; subtitle: string; seats: string }[] = [
     {
@@ -72,11 +102,26 @@ export function LobbyView({
     { id: 'slow', label: '慢速' }
   ];
 
+  const handleCreateOnlineRoom = () => {
+    createRoom(nickname, {
+      mode,
+      deckVariant,
+      generalPack,
+      freeGeneralPick: hostSettings.freeGeneralPick,
+      timerEnabled: hostSettings.timerEnabled,
+      timerSeconds: hostSettings.timerSeconds
+    });
+  };
+
+  const handleJoinOnlineRoom = () => {
+    joinRoom(joinCode, nickname);
+  };
+
   return (
     <div className="min-h-screen flex flex-col">
       {/* Top Header */}
       <header className="border-b border-stone-300 dark:border-stone-800 bg-white/85 dark:bg-[#1B1E24]/90 backdrop-blur px-6 py-3.5">
-        <div className="max-w-5xl mx-auto flex items-center justify-between gap-4">
+        <div className="max-w-5xl mx-auto flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-[#8B2626] text-white flex items-center justify-center font-serif font-bold text-lg shadow-sm">
               杀
@@ -92,6 +137,36 @@ export function LobbyView({
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Local vs Online Mode Switcher */}
+            <div className="inline-flex rounded-lg border border-stone-300 dark:border-stone-700 p-0.5 bg-stone-100 dark:bg-stone-900">
+              <button
+                type="button"
+                onClick={() => setLobbyTab('local')}
+                className={[
+                  'inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-bold transition-colors',
+                  lobbyTab === 'local'
+                    ? 'bg-white dark:bg-stone-700 text-stone-900 dark:text-white shadow-sm'
+                    : 'text-stone-500 hover:text-stone-800 dark:hover:text-stone-200'
+                ].join(' ')}
+              >
+                <Swords className="w-3.5 h-3.5" />
+                单机人机
+              </button>
+              <button
+                type="button"
+                onClick={() => setLobbyTab('online')}
+                className={[
+                  'inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-bold transition-colors',
+                  lobbyTab === 'online'
+                    ? 'bg-[#8B2626] text-white shadow-sm'
+                    : 'text-stone-500 hover:text-stone-800 dark:hover:text-stone-200'
+                ].join(' ')}
+              >
+                <Globe className="w-3.5 h-3.5" />
+                好友联机 PvP
+              </button>
+            </div>
+
             <button
               type="button"
               onClick={() => setShowRulesModal(true)}
@@ -112,12 +187,145 @@ export function LobbyView({
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="flex-1 max-w-5xl w-full mx-auto px-6 py-8 grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Column: Mode + Deck + General Pack + Seats */}
-        <div className="lg:col-span-7 space-y-6">
-          {/* Mode Picker */}
+      {/* Online PvP Entry View */}
+      {lobbyTab === 'online' ? (
+        <main className="flex-1 max-w-4xl w-full mx-auto px-6 py-8 space-y-6">
+          {onlineError && (
+            <div className="rounded-xl px-4 py-3 text-xs font-medium bg-rose-50 dark:bg-rose-950/60 border border-rose-300 dark:border-rose-700 text-rose-800 dark:text-rose-200 flex items-center justify-between">
+              <span>{onlineError}</span>
+              <button type="button" onClick={clearError} className="underline ml-3">
+                关闭
+              </button>
+            </div>
+          )}
+
+          {/* Nickname Bar */}
           <section className="rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-[#1E2128] p-5 shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-bold flex items-center gap-1.5">
+                  <Link2 className="w-4 h-4 text-[#8B2626] dark:text-amber-400" />
+                  免注册实时联机 PvP（房间链接直连）
+                </h2>
+                <p className="text-xs text-stone-500 mt-0.5">
+                  服务端权威防作弊 · 自动隔离手牌与身份 · 断线 30 秒保留座位并支持无缝重连
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <label className="text-xs text-stone-500 font-medium">你的昵称</label>
+                <input
+                  type="text"
+                  maxLength={16}
+                  value={nickname}
+                  onChange={(e) => setNickname(e.target.value)}
+                  placeholder="输入昵称"
+                  className="w-40 px-3 py-1.5 rounded-lg border border-stone-300 dark:border-stone-600 bg-stone-50 dark:bg-stone-900 text-sm font-semibold outline-none focus:border-stone-900 dark:focus:border-amber-400"
+                />
+              </div>
+            </div>
+          </section>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Join by Room Code */}
+            <section className="rounded-xl border-2 border-stone-300 dark:border-stone-700 bg-white dark:bg-[#1E2128] p-5 shadow-sm flex flex-col justify-between gap-4">
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 text-base font-serif font-bold">
+                  <LogIn className="w-5 h-5 text-[#1E3A5F] dark:text-sky-400" />
+                  <span>加入好友房间</span>
+                </div>
+                <p className="text-xs text-stone-500 leading-relaxed">
+                  输入好友发来的 6 位房间码（或直接打开好友发送的 `?room=XXXXXX` 链接），免注册一键入座；若满员自动进入实时观战席。
+                </p>
+                <input
+                  type="text"
+                  maxLength={6}
+                  value={joinCode}
+                  onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleJoinOnlineRoom();
+                  }}
+                  placeholder="输入 6 位房间码（如 A7K9P2）"
+                  className="w-full px-3.5 py-2.5 rounded-lg border border-stone-300 dark:border-stone-600 bg-stone-50 dark:bg-stone-900 font-mono text-base tracking-widest uppercase outline-none focus:border-stone-900 dark:focus:border-amber-400"
+                />
+              </div>
+
+              <button
+                type="button"
+                disabled={wsStatus === 'connecting' || !joinCode.trim()}
+                onClick={handleJoinOnlineRoom}
+                className="w-full py-3 rounded-xl bg-[#1E3A5F] hover:bg-[#162C49] disabled:opacity-45 text-white font-serif font-bold text-sm shadow transition-colors"
+              >
+                {wsStatus === 'connecting' ? '正在连接房间...' : '加入房间'}
+              </button>
+            </section>
+
+            {/* Create New Room */}
+            <section className="rounded-xl border-2 border-stone-900/80 dark:border-amber-500/70 bg-white dark:bg-[#1E2128] p-5 shadow-sm flex flex-col justify-between gap-4">
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 text-base font-serif font-bold">
+                  <PlusCircle className="w-5 h-5 text-[#8B2626] dark:text-amber-400" />
+                  <span>创建新联机房间</span>
+                </div>
+                <p className="text-xs text-stone-500 leading-relaxed">
+                  建房后即得 6 位房间码与专属邀请链接；房主可随时增删 AI 补位、踢人、移交房主、或在对局中实时开关倒计时。
+                </p>
+
+                <div className="grid grid-cols-3 gap-1.5">
+                  {(['1v1', '2v2', 'identity5'] as GameMode[]).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setMode(m)}
+                      className={[
+                        'py-1.5 rounded-lg text-xs font-bold border transition-colors',
+                        mode === m
+                          ? 'bg-stone-900 text-white border-stone-900 dark:bg-amber-600 dark:border-amber-600'
+                          : 'border-stone-300 dark:border-stone-700'
+                      ].join(' ')}
+                    >
+                      {m === '1v1' ? '1v1 单挑' : m === '2v2' ? '2v2 欢乐' : '五人身份'}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <select
+                    value={deckVariant}
+                    onChange={(e) => setDeckVariant(e.target.value as DeckVariant)}
+                    className="px-2.5 py-1.5 rounded-lg border border-stone-300 dark:border-stone-700 bg-stone-50 dark:bg-stone-900"
+                  >
+                    <option value="junzheng_161">军争篇 161张</option>
+                    <option value="standard_ex">标准+EX 108张</option>
+                  </select>
+                  <select
+                    value={generalPack}
+                    onChange={(e) => setGeneralPack(e.target.value as 'standard' | 'blank')}
+                    className="px-2.5 py-1.5 rounded-lg border border-stone-300 dark:border-stone-700 bg-stone-50 dark:bg-stone-900"
+                  >
+                    <option value="standard">标准包 27将</option>
+                    <option value="blank">白板测试将</option>
+                  </select>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                disabled={wsStatus === 'connecting'}
+                onClick={handleCreateOnlineRoom}
+                className="w-full py-3 rounded-xl bg-[#8B2626] hover:bg-[#731F1F] disabled:opacity-45 text-white font-serif font-bold text-sm shadow transition-colors"
+              >
+                {wsStatus === 'connecting' ? '正在创建房间...' : '创建房间并生成邀请链接'}
+              </button>
+            </section>
+          </div>
+        </main>
+      ) : (
+        /* Main Local Content */
+        <main className="flex-1 max-w-5xl w-full mx-auto px-6 py-8 grid grid-cols-1 lg:grid-cols-12 gap-6">
+          {/* Left Column: Mode + Deck + General Pack + Seats */}
+          <div className="lg:col-span-7 space-y-6">
+            {/* Mode Picker */}
+            <section className="rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-[#1E2128] p-5 shadow-sm">
             <div className="flex items-center gap-2 text-sm font-bold mb-3">
               <Swords className="w-4 h-4 text-[#8B2626] dark:text-amber-400" />
               <span>选择游戏模式</span>
@@ -477,6 +685,7 @@ export function LobbyView({
           </button>
         </div>
       </main>
+      )}
     </div>
   );
 }

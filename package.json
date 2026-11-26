@@ -5,8 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "pnpm --filter @sgs/web dev",
-    "build": "pnpm -r build",
-    "test": "pnpm --filter @sgs/engine test",
+    "server:dev": "pnpm --filter @sgs/server dev",
+    "server:start": "pnpm --filter @sgs/server start",
+    "build": "pnpm --filter @sgs/engine build && pnpm --filter @sgs/web build && pnpm --filter @sgs/server build",
+    "test": "pnpm --filter @sgs/engine test && pnpm --filter @sgs/server test",
     "test:coverage": "pnpm --filter @sgs/engine test:coverage",
     "typecheck": "pnpm -r typecheck"
   },

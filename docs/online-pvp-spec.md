@@ -34,3 +34,20 @@
 * **轻互动聊天**：提供可折叠房间聊天栏 + 常用快捷短语（`救救我`、`别无懈`、`快点吧`、`打得好`、`留桃`），支持观战席与座位玩家交流（对局中不泄露私密牌面）。
 * **轮次提醒**：轮到自己出牌或响应时，自动触发浏览器标签页标题闪烁提示与柔和 Web Audio 提示音（可静音）。
 * **无懈可击节奏**：采用节奏优先策略，仅向持有【无懈可击】的角色弹出响应，并保留「本回合不再询问同类锦囊」快捷开关。
+
+## 6. 启动与一键公网部署指南
+
+### 本地单进程联机运行
+```bash
+pnpm install
+pnpm build
+pnpm server:start
+# 默认监听 http://0.0.0.0:3000 （静态网页 + /ws 联机 + /health 健康检查）
+```
+
+### 一键公网部署（获得公网 HTTPS/WSS 链接与好友开黑）
+* **Render**：仓库根目录已内置 `render.yaml` + `Dockerfile`，在 Render 控制台选择 New Blueprint 关联本仓库即可自动部署。
+* **Railway**：已内置 `railway.json` + `Dockerfile`，在 Railway 选择 Deploy from GitHub Repo 即可自动构建并暴露公网域名。
+* **Fly.io**：已内置 `fly.toml` + `Dockerfile`，运行 `fly launch --no-deploy && fly deploy` 即可上线。
+* **Docker 自建**：`docker build -t sanguosha-minimal . && docker run -p 3000:3000 sanguosha-minimal`
+
