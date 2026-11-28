@@ -2,12 +2,14 @@ import type { CardInstance, PublicPlayerView } from '@sgs/engine';
 import { getRankLabel, getSuitSymbol } from '@sgs/engine';
 import { Bot, Shield, Sword, User, Link2, RotateCw, Wine } from 'lucide-react';
 import { FACTION_META, ROLE_META } from '../utils/labels';
+import type { InspectedSkill } from './SkillDetailModal';
 
 interface PlayerSeatProps {
   player: PublicPlayerView;
   isActiveTurn: boolean;
   isSelf: boolean;
   isTeammate?: boolean;
+  compactMobileSelf?: boolean;
   distance?: number;
   selectable?: boolean;
   selected?: boolean;
@@ -17,6 +19,7 @@ interface PlayerSeatProps {
   onSelect?: () => void;
   onToggleSelectCard?: (cardId: number) => void;
   onInspectCard?: (card: CardInstance) => void;
+  onInspectSkill?: (skill: InspectedSkill) => void;
 }
 
 export function PlayerSeat({
@@ -24,6 +27,7 @@ export function PlayerSeat({
   isActiveTurn,
   isSelf,
   isTeammate = false,
+  compactMobileSelf = false,
   distance,
   selectable = false,
   selected = false,
@@ -32,7 +36,8 @@ export function PlayerSeat({
   selectedCardIds = [],
   onSelect,
   onToggleSelectCard,
-  onInspectCard
+  onInspectCard,
+  onInspectSkill
 }: PlayerSeatProps) {
   const faction = FACTION_META[player.faction];
   const role = ROLE_META[player.role];
@@ -44,6 +49,175 @@ export function PlayerSeat({
     { label: '-1', card: player.equips.horseMinus },
     { label: '宝', card: player.equips.treasure }
   ];
+
+  const activeEquips = equipItems.filter((x) => x.card);
+  const hasPiles = Boolean(
+    (player.removedCardCounts && Object.keys(player.removedCardCounts).length > 0) ||
+      player.huashenCount
+  );
+
+  const renderSkillChips = () =>
+    player.skillDetails && player.skillDetails.length > 0 ? (
+      <>
+        {player.skillDetails.map((sk) => (
+          <button
+            key={sk.id}
+            type="button"
+            title={`${sk.name}：${sk.description}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onInspectSkill?.({
+                generalName: player.generalName,
+                name: sk.name,
+                description: sk.description,
+                type: sk.type
+              });
+            }}
+            className={[
+              'px-1.5 py-0.5 rounded text-[10px] font-bold border transition-colors active:scale-95',
+              sk.type === 'lord'
+                ? 'bg-amber-100 dark:bg-amber-950/70 text-amber-900 dark:text-amber-200 border-amber-300 dark:border-amber-700 hover:bg-amber-200/70'
+                : 'bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-200 border-stone-200 dark:border-stone-700 hover:bg-stone-200/80 dark:hover:bg-stone-700'
+            ].join(' ')}
+          >
+            {sk.name}
+            {sk.type === 'lord' ? '·主' : sk.type === 'compulsory' ? '·锁' : ''}
+          </button>
+        ))}
+      </>
+    ) : null;
+
+  const renderPileBadges = () =>
+    hasPiles ? (
+      <>
+        {player.removedCardCounts &&
+          Object.entries(player.removedCardCounts).map(([pileKey, cnt]) => {
+            const pileLabel =
+              pileKey === 'buqu' || pileKey === 'chuang'
+                ? '创'
+                : pileKey === 'tian'
+                  ? '田'
+                  : pileKey === 'lb_qianxun'
+                    ? '谦逊'
+                    : pileKey;
+            return (
+              <span
+                key={pileKey}
+                className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 dark:bg-amber-950/50 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-700"
+              >
+                {pileLabel}×{cnt}
+              </span>
+            );
+          })}
+        {player.huashenCount && player.huashenCount > 0 && (
+          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-50 dark:bg-purple-950/50 text-purple-900 dark:text-purple-200 border border-purple-300 dark:border-purple-700">
+            化身×{player.huashenCount}
+            {player.activeHuashenGeneralName ? `·${player.activeHuashenGeneralName}` : ''}
+          </span>
+        )}
+      </>
+    ) : null;
+
+  const renderEquipChips = () =>
+    activeEquips.map(({ label, card }) => {
+      if (!card) return null;
+      const canSelectEquip = Boolean(
+        isSelf && selectableCardIds?.has(card.id) && onToggleSelectCard
+      );
+      const isEquipSelected = selectedCardIds.includes(card.id);
+      return (
+        <button
+          key={card.id}
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (canSelectEquip) {
+              onToggleSelectCard?.(card.id);
+            } else {
+              onInspectCard?.(card);
+            }
+          }}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onInspectCard?.(card);
+          }}
+          title={
+            canSelectEquip
+              ? `点击选择装备牌【${card.displayName}】（${getSuitSymbol(card.suit)}${getRankLabel(card.rank)}）`
+              : `${card.displayName} (${getSuitSymbol(card.suit)}${getRankLabel(card.rank)})`
+          }
+          className={[
+            'inline-flex items-center gap-0.5 sm:gap-1 px-1 sm:px-1.5 py-0.5 rounded text-[10px] sm:text-[11px] border transition-all',
+            isEquipSelected
+              ? 'bg-[#8B2626] text-white border-[#8B2626] ring-2 ring-rose-400'
+              : canSelectEquip
+                ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-200 border-emerald-400 ring-1 ring-emerald-400/70 cursor-pointer'
+                : 'bg-sky-50 dark:bg-sky-950/60 text-sky-900 dark:text-sky-200 border-sky-200 dark:border-sky-800 hover:bg-sky-100'
+          ].join(' ')}
+        >
+          {label === '武' ? (
+            <Sword className="w-2.5 h-2.5 sm:w-3 sm:h-3 shrink-0" />
+          ) : label === '防' ? (
+            <Shield className="w-2.5 h-2.5 sm:w-3 sm:h-3 shrink-0" />
+          ) : (
+            <span className="font-mono text-[9px] sm:text-[10px] opacity-75">{label}</span>
+          )}
+          <span className="font-medium truncate max-w-[66px] sm:max-w-none">{card.displayName}</span>
+          <span
+            className={
+              isEquipSelected
+                ? 'text-[9px] sm:text-[10px] font-mono opacity-90'
+                : card.suit === 'heart' || card.suit === 'diamond'
+                  ? 'text-[9px] sm:text-[10px] font-mono text-red-600 dark:text-red-400'
+                  : 'text-[9px] sm:text-[10px] font-mono opacity-75'
+            }
+          >
+            {getSuitSymbol(card.suit)}
+            {getRankLabel(card.rank)}
+          </span>
+        </button>
+      );
+    });
+
+  const renderJudgeChips = () =>
+    player.judgeZone.map((jc) => (
+      <button
+        key={jc.id}
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onInspectCard?.(jc);
+        }}
+        className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-50 dark:bg-rose-950/60 text-rose-800 dark:text-rose-200 border border-rose-200 dark:border-rose-800"
+      >
+        判·{jc.displayName}({getSuitSymbol(jc.suit)}
+        {getRankLabel(jc.rank)})
+      </button>
+    ));
+
+  const renderStatusBadges = () => (
+    <div className="flex items-center gap-1 shrink-0">
+      {player.chained && (
+        <span className="inline-flex items-center gap-0.5 px-1 sm:px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-bold bg-indigo-100 text-indigo-800 dark:bg-indigo-900/60 dark:text-indigo-200">
+          <Link2 className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
+          连环
+        </span>
+      )}
+      {player.flipped && (
+        <span className="inline-flex items-center gap-0.5 px-1 sm:px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-bold bg-stone-200 text-stone-800 dark:bg-stone-700 dark:text-stone-100">
+          <RotateCw className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
+          翻面
+        </span>
+      )}
+      {player.drunk && (
+        <span className="inline-flex items-center gap-0.5 px-1 sm:px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200">
+          <Wine className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
+          酒
+        </span>
+      )}
+    </div>
+  );
 
   return (
     <div
@@ -66,36 +240,101 @@ export function PlayerSeat({
           ? 'border-amber-500 shadow-md ring-1 ring-amber-400/60'
           : 'border-stone-300 dark:border-stone-700 shadow-sm',
         selectable
-          ? 'cursor-pointer ring-2 ring-emerald-500/80 hover:scale-[1.01] hover:shadow-lg'
+          ? 'cursor-pointer ring-2 ring-emerald-500/80 sm:hover:scale-[1.01] hover:shadow-lg'
           : '',
         selected ? 'ring-2 ring-rose-600 dark:ring-rose-400 bg-rose-50/40 dark:bg-rose-950/20' : '',
         secondarySelected ? 'ring-2 ring-sky-600 dark:ring-sky-400' : ''
       ].join(' ')}
     >
       {/* Faction Color Top Strip */}
-      <div className={`h-1.5 w-full ${faction.bar}`} />
+      <div className={`h-1 sm:h-1.5 w-full ${faction.bar}`} />
 
-      <div className="p-2.5 flex flex-col gap-1.5">
+      {/* Compact Mobile Self Bar (< lg only when compactMobileSelf is enabled) */}
+      {compactMobileSelf && (
+        <div className="lg:hidden px-2 py-1.5 flex flex-col gap-1">
+          <div className="flex items-center justify-between gap-1.5">
+            <div className="flex items-center gap-1 min-w-0">
+              <span className={`px-1 py-0.5 rounded text-[10px] font-bold shrink-0 ${faction.badge}`}>
+                {faction.label}
+              </span>
+              <span className="font-serif font-bold text-xs truncate">{player.generalName}</span>
+              <span className={`px-1 py-0.5 rounded text-[9px] font-semibold shrink-0 ${role.cls}`}>
+                {role.label}
+              </span>
+              <span className="text-[10px] text-stone-400 truncate hidden xs:inline">
+                {player.seat + 1}号
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              {renderStatusBadges()}
+              <div className="flex items-center gap-0.5">
+                {Array.from({ length: Math.min(Math.max(player.maxHp, 0), 6) }).map((_, i) => (
+                  <span
+                    key={i}
+                    className={[
+                      'w-2 h-2 rounded-full border',
+                      i < player.hp
+                        ? player.hp <= 1
+                          ? 'bg-red-600 border-red-700'
+                          : 'bg-emerald-600 border-emerald-700'
+                        : 'bg-transparent border-stone-300 dark:border-stone-600'
+                    ].join(' ')}
+                  />
+                ))}
+                <span className="ml-0.5 font-mono text-[10px] font-bold text-stone-700 dark:text-stone-200">
+                  {player.alive ? `${player.hp}/${player.maxHp}` : '亡'}
+                </span>
+              </div>
+              <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-200 font-semibold">
+                牌{player.handCount}
+              </span>
+            </div>
+          </div>
+
+          {(activeEquips.length > 0 ||
+            player.judgeZone.length > 0 ||
+            (player.skillDetails && player.skillDetails.length > 0) ||
+            hasPiles) && (
+            <div className="flex flex-wrap items-center gap-1 pt-0.5 border-t border-stone-100 dark:border-stone-800">
+              {renderSkillChips()}
+              {renderPileBadges()}
+              {renderEquipChips()}
+              {renderJudgeChips()}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Full Card Body (always on opponents; lg+ when compactMobileSelf is enabled) */}
+      <div
+        className={[
+          'p-2 sm:p-2.5 flex-col gap-1 sm:gap-1.5',
+          compactMobileSelf ? 'hidden lg:flex' : 'flex'
+        ].join(' ')}
+      >
         {/* Header: Seat + Faction + General + Role */}
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5 min-w-0">
-            <span className={`px-1.5 py-0.5 rounded text-[11px] font-bold shrink-0 ${faction.badge}`}>
+        <div className="flex items-center justify-between gap-1 sm:gap-2">
+          <div className="flex items-center gap-1 sm:gap-1.5 min-w-0">
+            <span
+              className={`px-1 sm:px-1.5 py-0.5 rounded text-[10px] sm:text-[11px] font-bold shrink-0 ${faction.badge}`}
+            >
               {faction.label}
             </span>
-            <span className="font-serif font-bold text-sm truncate">
+            <span className="font-serif font-bold text-xs sm:text-sm truncate">
               {player.generalName}
             </span>
-            <span className="text-[11px] text-stone-400 shrink-0">
+            <span className="hidden sm:inline text-[11px] text-stone-400 shrink-0">
               {player.gender === 'male' ? '♂' : '♀'}
             </span>
           </div>
 
           <div className="flex items-center gap-1 shrink-0">
-            <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${role.cls}`}>
+            <span className={`px-1 sm:px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-semibold ${role.cls}`}>
               {role.label}
             </span>
             {distance !== undefined && distance > 0 && player.alive && (
-              <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300 border border-stone-200 dark:border-stone-700">
+              <span className="px-1 sm:px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-mono bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300 border border-stone-200 dark:border-stone-700">
                 距{distance}
               </span>
             )}
@@ -103,32 +342,32 @@ export function PlayerSeat({
         </div>
 
         {/* Subheader: Player name + AI/Human + Hand count */}
-        <div className="flex items-center justify-between text-xs text-stone-500 dark:text-stone-400">
+        <div className="flex items-center justify-between gap-1 text-[11px] sm:text-xs text-stone-500 dark:text-stone-400">
           <div className="flex items-center gap-1 min-w-0">
             {player.isAI ? (
-              <Bot className="w-3.5 h-3.5 shrink-0 text-stone-400" />
+              <Bot className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0 text-stone-400" />
             ) : (
-              <User className="w-3.5 h-3.5 shrink-0 text-stone-500" />
+              <User className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0 text-stone-500" />
             )}
             <span className="truncate">
               {player.seat + 1}号·{player.name}
               {isSelf ? '（你）' : isTeammate ? '（队友）' : ''}
             </span>
           </div>
-          <span className="font-mono text-[11px] font-semibold text-stone-700 dark:text-stone-200">
-            手牌 {player.handCount}
-            {player.woodenOxCount > 0 ? ` + 木牛${player.woodenOxCount}` : ''}
+          <span className="font-mono text-[10px] sm:text-[11px] font-semibold text-stone-700 dark:text-stone-200 shrink-0">
+            牌{player.handCount}
+            {player.woodenOxCount > 0 ? `+牛${player.woodenOxCount}` : ''}
           </span>
         </div>
 
         {/* HP Dots & Status Badges */}
-        <div className="flex items-center justify-between gap-2 pt-0.5">
-          <div className="flex items-center gap-1">
+        <div className="flex items-center justify-between gap-1 pt-0.5">
+          <div className="flex items-center gap-0.5 sm:gap-1 min-w-0">
             {Array.from({ length: Math.max(player.maxHp, 0) }).map((_, i) => (
               <span
                 key={i}
                 className={[
-                  'w-2.5 h-2.5 rounded-full border',
+                  'w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full border shrink-0',
                   i < player.hp
                     ? player.hp <= 1
                       ? 'bg-red-600 border-red-700'
@@ -137,170 +376,34 @@ export function PlayerSeat({
                 ].join(' ')}
               />
             ))}
-            <span className="ml-1 font-mono text-[11px] font-semibold text-stone-700 dark:text-stone-300">
-              {player.alive ? `HP ${player.hp}/${player.maxHp}` : '已阵亡'}
+            <span className="ml-0.5 sm:ml-1 font-mono text-[10px] sm:text-[11px] font-semibold text-stone-700 dark:text-stone-300 whitespace-nowrap">
+              {player.alive ? `${player.hp}/${player.maxHp}` : '已阵亡'}
             </span>
           </div>
 
-          <div className="flex items-center gap-1">
-            {player.chained && (
-              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-800 dark:bg-indigo-900/60 dark:text-indigo-200">
-                <Link2 className="w-3 h-3" />
-                连环
-              </span>
-            )}
-            {player.flipped && (
-              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-stone-200 text-stone-800 dark:bg-stone-700 dark:text-stone-100">
-                <RotateCw className="w-3 h-3" />
-                翻面
-              </span>
-            )}
-            {player.drunk && (
-              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200">
-                <Wine className="w-3 h-3" />
-                酒
-              </span>
-            )}
-          </div>
+          {renderStatusBadges()}
         </div>
 
-        {/* General Skill Badges */}
+        {/* General Skill Badges (tap on mobile or hover on desktop to inspect OL text) */}
         {player.skillDetails && player.skillDetails.length > 0 && (
-          <div className="flex flex-wrap gap-1">
-            {player.skillDetails.map((sk) => (
-              <span
-                key={sk.id}
-                title={`${sk.name}：${sk.description}`}
-                className={[
-                  'px-1.5 py-0.5 rounded text-[10px] font-bold cursor-help border',
-                  sk.type === 'lord'
-                    ? 'bg-amber-100 dark:bg-amber-950/70 text-amber-900 dark:text-amber-200 border-amber-300 dark:border-amber-700'
-                    : 'bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-200 border-stone-200 dark:border-stone-700'
-                ].join(' ')}
-              >
-                {sk.name}
-                {sk.type === 'lord' ? '·主' : sk.type === 'compulsory' ? '·锁' : ''}
-              </span>
-            ))}
-          </div>
+          <div className="flex flex-wrap gap-1">{renderSkillChips()}</div>
         )}
 
         {/* Pile & Huashen Badges (田 / 创 / 谦逊 / 化身) */}
-        {((player.removedCardCounts && Object.keys(player.removedCardCounts).length > 0) ||
-          player.huashenCount) && (
-          <div className="flex flex-wrap gap-1">
-            {player.removedCardCounts &&
-              Object.entries(player.removedCardCounts).map(([pileKey, cnt]) => {
-                const pileLabel =
-                  pileKey === 'buqu' || pileKey === 'chuang'
-                    ? '创'
-                    : pileKey === 'tian'
-                      ? '田'
-                      : pileKey === 'lb_qianxun'
-                        ? '谦逊'
-                        : pileKey;
-                return (
-                  <span
-                    key={pileKey}
-                    className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 dark:bg-amber-950/50 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-700"
-                  >
-                    {pileLabel}×{cnt}
-                  </span>
-                );
-              })}
-            {player.huashenCount && player.huashenCount > 0 && (
-              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-50 dark:bg-purple-950/50 text-purple-900 dark:text-purple-200 border border-purple-300 dark:border-purple-700">
-                化身×{player.huashenCount}
-                {player.activeHuashenGeneralName ? `·${player.activeHuashenGeneralName}` : ''}
-              </span>
-            )}
-          </div>
-        )}
+        {hasPiles && <div className="flex flex-wrap gap-1">{renderPileBadges()}</div>}
 
         {/* Equipment Strip */}
         <div className="flex flex-wrap gap-1 pt-1 border-t border-stone-100 dark:border-stone-800">
-          {equipItems.filter((x) => x.card).length === 0 ? (
-            <span className="text-[11px] text-stone-400">无装备</span>
+          {activeEquips.length === 0 ? (
+            <span className="text-[10px] sm:text-[11px] text-stone-400">无装备</span>
           ) : (
-            equipItems.map(({ label, card }) => {
-              if (!card) return null;
-              const canSelectEquip = Boolean(isSelf && selectableCardIds?.has(card.id) && onToggleSelectCard);
-              const isEquipSelected = selectedCardIds.includes(card.id);
-              return (
-                <button
-                  key={card.id}
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (canSelectEquip) {
-                      onToggleSelectCard?.(card.id);
-                    } else {
-                      onInspectCard?.(card);
-                    }
-                  }}
-                  onContextMenu={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    onInspectCard?.(card);
-                  }}
-                  title={
-                    canSelectEquip
-                      ? `点击选择装备牌【${card.displayName}】（${getSuitSymbol(card.suit)}${getRankLabel(card.rank)}）`
-                      : `${card.displayName} (${getSuitSymbol(card.suit)}${getRankLabel(card.rank)})`
-                  }
-                  className={[
-                    'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] border transition-all',
-                    isEquipSelected
-                      ? 'bg-[#8B2626] text-white border-[#8B2626] ring-2 ring-rose-400'
-                      : canSelectEquip
-                        ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-200 border-emerald-400 ring-1 ring-emerald-400/70 cursor-pointer'
-                        : 'bg-sky-50 dark:bg-sky-950/60 text-sky-900 dark:text-sky-200 border-sky-200 dark:border-sky-800 hover:bg-sky-100'
-                  ].join(' ')}
-                >
-                  {label === '武' ? (
-                    <Sword className="w-3 h-3 shrink-0" />
-                  ) : label === '防' ? (
-                    <Shield className="w-3 h-3 shrink-0" />
-                  ) : (
-                    <span className="font-mono text-[10px] opacity-75">{label}</span>
-                  )}
-                  <span className="font-medium">{card.displayName}</span>
-                  <span
-                    className={
-                      isEquipSelected
-                        ? 'text-[10px] font-mono opacity-90'
-                        : card.suit === 'heart' || card.suit === 'diamond'
-                          ? 'text-[10px] font-mono text-red-600 dark:text-red-400'
-                          : 'text-[10px] font-mono opacity-75'
-                    }
-                  >
-                    {getSuitSymbol(card.suit)}
-                    {getRankLabel(card.rank)}
-                  </span>
-                </button>
-              );
-            })
+            renderEquipChips()
           )}
         </div>
 
         {/* Delayed Tricks (Judge Zone) */}
         {player.judgeZone.length > 0 && (
-          <div className="flex flex-wrap gap-1">
-            {player.judgeZone.map((jc) => (
-              <button
-                key={jc.id}
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onInspectCard?.(jc);
-                }}
-                className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-50 dark:bg-rose-950/60 text-rose-800 dark:text-rose-200 border border-rose-200 dark:border-rose-800"
-              >
-                判定·{jc.displayName} ({getSuitSymbol(jc.suit)}
-                {getRankLabel(jc.rank)})
-              </button>
-            ))}
-          </div>
+          <div className="flex flex-wrap gap-1">{renderJudgeChips()}</div>
         )}
 
         {/* Visible Hand Preview (for 2v2 Teammate or Debug Reveal All Hands) */}

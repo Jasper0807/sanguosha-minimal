@@ -4,6 +4,9 @@ export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: {
     extend: {
+      screens: {
+        xs: '400px'
+      },
       fontFamily: {
         sans: ['"Noto Sans SC"', '"PingFang SC"', '"Microsoft YaHei"', 'system-ui', 'sans-serif'],
         serif: ['"Noto Serif SC"', '"Songti SC"', 'Georgia', 'serif'],

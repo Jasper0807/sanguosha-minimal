@@ -10,25 +10,26 @@ export function RulesModal({ open, onClose }: RulesModalProps) {
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/45 backdrop-blur-[1px] flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 bg-black/45 backdrop-blur-[1px] flex items-end sm:items-center justify-center p-2.5 sm:p-4"
       onClick={onClose}
     >
       <div
-        className="max-w-2xl w-full max-h-[82vh] overflow-y-auto rounded-xl bg-white dark:bg-[#1F232B] border border-stone-300 dark:border-stone-700 shadow-2xl p-6"
+        className="max-w-2xl w-full max-h-[88dvh] overflow-y-auto rounded-xl bg-white dark:bg-[#1F232B] border border-stone-300 dark:border-stone-700 shadow-2xl p-4 sm:p-6 safe-bottom-lg"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-stone-200 dark:border-stone-700 pb-3">
-          <h3 className="text-lg font-bold">三国杀 OL 核心规则速查</h3>
+          <h3 className="text-base sm:text-lg font-bold">三国杀 OL 核心规则速查</h3>
           <button
             type="button"
             onClick={onClose}
-            className="p-1 rounded hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-400"
+            aria-label="关闭规则速查"
+            className="p-1.5 rounded-lg hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-400"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="mt-4 space-y-4 text-sm leading-relaxed text-stone-700 dark:text-stone-300">
+        <div className="mt-4 space-y-4 text-xs sm:text-sm leading-relaxed text-stone-700 dark:text-stone-300">
           <section>
             <h4 className="font-bold text-stone-900 dark:text-stone-100">1. 回合六阶段</h4>
             <p className="mt-1">
@@ -68,19 +69,19 @@ export function RulesModal({ open, onClose }: RulesModalProps) {
           <section>
             <h4 className="font-bold text-stone-900 dark:text-stone-100">5. 线上好友房间链接 PvP</h4>
             <p className="mt-1">
-              在大厅点击「创建线上房间」生成 6 位房间码与一键邀请链接，好友打开即可直达入座；支持房主自由配置 AI 补位、实时倒计时与断线自动重连，服务端按视角严格裁剪隐藏手牌与暗置身份。
+              在大厅点击「创建新联机房间」生成 6 位房间码与一键邀请链接，好友打开即可直达入座；支持 WebRTC P2P 零服务器直连与权威服务端双模式，含 AI 补位、实时倒计时与断线自动重连。
             </p>
           </section>
 
           <section>
-            <h4 className="font-bold text-stone-900 dark:text-stone-100">6. 快捷键说明</h4>
-            <div className="mt-1 grid grid-cols-2 gap-2 text-xs font-mono bg-stone-50 dark:bg-stone-800/70 p-3 rounded-lg">
+            <h4 className="font-bold text-stone-900 dark:text-stone-100">6. 操作与快捷键说明</h4>
+            <div className="mt-1 grid grid-cols-1 sm:grid-cols-2 gap-1.5 sm:gap-2 text-xs font-mono bg-stone-50 dark:bg-stone-800/70 p-3 rounded-lg">
+              <div>点击技能标签：查看武将 OL 技能原文</div>
+              <div>点击牌右上角 i：查看完整牌面说明</div>
               <div>1 ~ 9：快速选中手牌 / 技能选项</div>
               <div>双击手牌：直接使用无需目标的牌</div>
               <div>Enter：确认出牌 / 响应</div>
-              <div>Esc：取消选中 / 放弃可选响应</div>
-              <div>Space：结束出牌阶段</div>
-              <div>点击牌右上角 i：查看完整牌面</div>
+              <div>Esc / Space：取消选择 / 结束出牌</div>
             </div>
           </section>
         </div>

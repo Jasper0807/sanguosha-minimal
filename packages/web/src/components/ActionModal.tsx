@@ -58,22 +58,22 @@ function GuanxingModal({
   };
 
   return (
-    <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-[1px] flex items-center justify-center p-4">
-      <div className="max-w-3xl w-full rounded-xl bg-white dark:bg-[#1F232B] border border-stone-300 dark:border-stone-700 shadow-2xl p-5 flex flex-col gap-4">
+    <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-[1px] flex items-end sm:items-center justify-center p-2.5 sm:p-4">
+      <div className="max-w-3xl w-full max-h-[92dvh] overflow-y-auto rounded-xl bg-white dark:bg-[#1F232B] border border-stone-300 dark:border-stone-700 shadow-2xl p-3.5 sm:p-5 flex flex-col gap-3 sm:gap-4 safe-bottom-lg">
         <div>
-          <h3 className="text-base font-bold">{message}</h3>
-          <p className="text-xs text-stone-500 mt-0.5">
+          <h3 className="text-sm sm:text-base font-bold">{message}</h3>
+          <p className="text-[11px] sm:text-xs text-stone-500 mt-0.5">
             自由分配牌堆顶与牌堆底顺序；牌堆顶最左侧的牌将最先被判定或摸出。
           </p>
         </div>
 
         {/* Top of Draw Pile */}
-        <div className="rounded-lg border border-amber-300/80 dark:border-amber-700/60 bg-amber-50/40 dark:bg-amber-950/20 p-3">
+        <div className="rounded-lg border border-amber-300/80 dark:border-amber-700/60 bg-amber-50/40 dark:bg-amber-950/20 p-2.5 sm:p-3">
           <div className="text-xs font-bold text-amber-900 dark:text-amber-200 mb-2 flex items-center justify-between">
-            <span>牌堆顶（从左至右依次最先翻开 / 摸出）</span>
+            <span>牌堆顶（从左至右最先翻开 / 摸出）</span>
             <span className="font-mono">{topIds.length} 张</span>
           </div>
-          <div className="min-h-[126px] flex flex-wrap items-center gap-3">
+          <div className="min-h-[112px] sm:min-h-[126px] flex items-center gap-2.5 sm:gap-3 overflow-x-auto touch-scroll-x pb-1">
             {topIds.length === 0 ? (
               <span className="text-xs text-stone-400">未放置牌堆顶牌</span>
             ) : (
@@ -81,7 +81,7 @@ function GuanxingModal({
                 const card = cardMap.get(id);
                 if (!card) return null;
                 return (
-                  <div key={id} className="flex flex-col items-center gap-1">
+                  <div key={id} className="flex flex-col items-center gap-1 shrink-0">
                     <CardTile
                       card={card}
                       compact
@@ -93,7 +93,7 @@ function GuanxingModal({
                         type="button"
                         disabled={idx === 0}
                         onClick={() => shift(topIds, setTopIds, idx, -1)}
-                        className="p-1 rounded border border-stone-300 dark:border-stone-600 disabled:opacity-30 hover:bg-stone-100 dark:hover:bg-stone-700"
+                        className="p-1.5 sm:p-1 rounded border border-stone-300 dark:border-stone-600 disabled:opacity-30 hover:bg-stone-100 dark:hover:bg-stone-700"
                         title="左移（更先摸出）"
                       >
                         <ArrowLeft className="w-3 h-3" />
@@ -101,7 +101,7 @@ function GuanxingModal({
                       <button
                         type="button"
                         onClick={() => moveToBottom(id)}
-                        className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-stone-800 text-white dark:bg-stone-200 dark:text-stone-900 inline-flex items-center gap-0.5"
+                        className="px-1.5 py-1 sm:py-0.5 rounded text-[10px] font-semibold bg-stone-800 text-white dark:bg-stone-200 dark:text-stone-900 inline-flex items-center gap-0.5"
                         title="移至牌堆底"
                       >
                         <ArrowDown className="w-3 h-3" />
@@ -111,7 +111,7 @@ function GuanxingModal({
                         type="button"
                         disabled={idx === topIds.length - 1}
                         onClick={() => shift(topIds, setTopIds, idx, 1)}
-                        className="p-1 rounded border border-stone-300 dark:border-stone-600 disabled:opacity-30 hover:bg-stone-100 dark:hover:bg-stone-700"
+                        className="p-1.5 sm:p-1 rounded border border-stone-300 dark:border-stone-600 disabled:opacity-30 hover:bg-stone-100 dark:hover:bg-stone-700"
                         title="右移"
                       >
                         <ArrowRight className="w-3 h-3" />
@@ -125,12 +125,12 @@ function GuanxingModal({
         </div>
 
         {/* Bottom of Draw Pile */}
-        <div className="rounded-lg border border-stone-300 dark:border-stone-700 bg-stone-50 dark:bg-stone-900/50 p-3">
+        <div className="rounded-lg border border-stone-300 dark:border-stone-700 bg-stone-50 dark:bg-stone-900/50 p-2.5 sm:p-3">
           <div className="text-xs font-bold text-stone-700 dark:text-stone-300 mb-2 flex items-center justify-between">
             <span>牌堆底（按顺序沉底）</span>
             <span className="font-mono">{bottomIds.length} 张</span>
           </div>
-          <div className="min-h-[126px] flex flex-wrap items-center gap-3">
+          <div className="min-h-[112px] sm:min-h-[126px] flex items-center gap-2.5 sm:gap-3 overflow-x-auto touch-scroll-x pb-1">
             {bottomIds.length === 0 ? (
               <span className="text-xs text-stone-400">未放置牌堆底牌</span>
             ) : (
@@ -138,7 +138,7 @@ function GuanxingModal({
                 const card = cardMap.get(id);
                 if (!card) return null;
                 return (
-                  <div key={id} className="flex flex-col items-center gap-1">
+                  <div key={id} className="flex flex-col items-center gap-1 shrink-0">
                     <CardTile
                       card={card}
                       compact
@@ -150,7 +150,7 @@ function GuanxingModal({
                         type="button"
                         disabled={idx === 0}
                         onClick={() => shift(bottomIds, setBottomIds, idx, -1)}
-                        className="p-1 rounded border border-stone-300 dark:border-stone-600 disabled:opacity-30 hover:bg-stone-100 dark:hover:bg-stone-700"
+                        className="p-1.5 sm:p-1 rounded border border-stone-300 dark:border-stone-600 disabled:opacity-30 hover:bg-stone-100 dark:hover:bg-stone-700"
                         title="左移"
                       >
                         <ArrowLeft className="w-3 h-3" />
@@ -158,7 +158,7 @@ function GuanxingModal({
                       <button
                         type="button"
                         onClick={() => moveToTop(id)}
-                        className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-600 text-white inline-flex items-center gap-0.5"
+                        className="px-1.5 py-1 sm:py-0.5 rounded text-[10px] font-semibold bg-amber-600 text-white inline-flex items-center gap-0.5"
                         title="移至牌堆顶"
                       >
                         <ArrowUp className="w-3 h-3" />
@@ -168,7 +168,7 @@ function GuanxingModal({
                         type="button"
                         disabled={idx === bottomIds.length - 1}
                         onClick={() => shift(bottomIds, setBottomIds, idx, 1)}
-                        className="p-1 rounded border border-stone-300 dark:border-stone-600 disabled:opacity-30 hover:bg-stone-100 dark:hover:bg-stone-700"
+                        className="p-1.5 sm:p-1 rounded border border-stone-300 dark:border-stone-600 disabled:opacity-30 hover:bg-stone-100 dark:hover:bg-stone-700"
                         title="右移"
                       >
                         <ArrowRight className="w-3 h-3" />
@@ -185,7 +185,7 @@ function GuanxingModal({
           <button
             type="button"
             onClick={() => onConfirm(topIds, bottomIds)}
-            className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-lg bg-[#8B2626] hover:bg-[#731F1F] text-white text-sm font-bold shadow-sm transition-colors"
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-lg bg-[#8B2626] hover:bg-[#731F1F] text-white text-sm font-bold shadow-sm transition-colors"
           >
             <Check className="w-4 h-4" />
             确认观星排列（顶 {topIds.length} / 底 {bottomIds.length}）
@@ -221,24 +221,24 @@ export function ActionModal({
 
   if (prompt.type === 'choose_option') {
     return (
-      <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[1px] flex items-center justify-center p-4">
-        <div className="max-w-md w-full rounded-xl bg-white dark:bg-[#1F232B] border border-stone-300 dark:border-stone-700 shadow-2xl p-5">
-          <h3 className="text-base font-bold">{prompt.message}</h3>
-          <div className="mt-4 flex flex-col gap-2">
+      <div className="fixed inset-0 z-40 bg-black/45 backdrop-blur-[1px] flex items-end sm:items-center justify-center p-3 sm:p-4">
+        <div className="max-w-md w-full max-h-[85dvh] overflow-y-auto rounded-xl bg-white dark:bg-[#1F232B] border border-stone-300 dark:border-stone-700 shadow-2xl p-4 sm:p-5 safe-bottom-lg">
+          <h3 className="text-sm sm:text-base font-bold">{prompt.message}</h3>
+          <div className="mt-3.5 flex flex-col gap-2">
             {prompt.options.map((opt, idx) => (
               <button
                 key={opt.id}
                 type="button"
                 onClick={() => onChooseOption(opt.id)}
                 className={[
-                  'w-full px-4 py-2.5 rounded-lg text-sm font-semibold border transition-colors text-left flex items-center justify-between',
+                  'w-full min-h-[44px] px-4 py-2.5 rounded-lg text-sm font-semibold border transition-colors text-left flex items-center justify-between gap-2',
                   idx === 0
                     ? 'bg-stone-900 text-white border-stone-900 hover:bg-stone-800 dark:bg-amber-600 dark:border-amber-600 dark:hover:bg-amber-500'
                     : 'bg-stone-50 dark:bg-stone-800 text-stone-800 dark:text-stone-100 border-stone-300 dark:border-stone-600 hover:bg-stone-100 dark:hover:bg-stone-700'
                 ].join(' ')}
               >
                 <span>{opt.label}</span>
-                <span className="font-mono text-xs opacity-60">{idx + 1}</span>
+                <span className="hidden sm:inline font-mono text-xs opacity-60">{idx + 1}</span>
               </button>
             ))}
           </div>
@@ -249,28 +249,30 @@ export function ActionModal({
 
   if (prompt.type === 'choose_player_card') {
     return (
-      <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[1px] flex items-center justify-center p-4">
-        <div className="max-w-lg w-full rounded-xl bg-white dark:bg-[#1F232B] border border-stone-300 dark:border-stone-700 shadow-2xl p-5">
-          <h3 className="text-base font-bold">{prompt.message}</h3>
-          <p className="text-xs text-stone-500 mt-1">点击选择目标区域内的一张牌</p>
-          <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-72 overflow-y-auto">
-            {prompt.choices.map((ch, idx) => (
-              <button
-                key={`${ch.zone}_${idx}`}
-                type="button"
-                onClick={() => onChoosePlayerCard(idx)}
-                className={[
-                  'px-3 py-2.5 rounded-lg text-xs font-semibold border text-left transition-all hover:shadow',
-                  ch.zone === 'hand'
-                    ? 'bg-stone-100 dark:bg-stone-800 border-stone-300 dark:border-stone-600'
-                    : ch.zone === 'judge'
-                      ? 'bg-rose-50 dark:bg-rose-950/50 border-rose-300 dark:border-rose-700 text-rose-800 dark:text-rose-200'
-                      : 'bg-sky-50 dark:bg-sky-950/50 border-sky-300 dark:border-sky-700 text-sky-900 dark:text-sky-200'
-                ].join(' ')}
-              >
-                {ch.label}
-              </button>
-            ))}
+      <div className="fixed inset-0 z-40 bg-black/45 backdrop-blur-[1px] flex items-end sm:items-center justify-center p-3 sm:p-4">
+        <div className="max-w-lg w-full max-h-[85dvh] flex flex-col rounded-xl bg-white dark:bg-[#1F232B] border border-stone-300 dark:border-stone-700 shadow-2xl p-4 sm:p-5 safe-bottom-lg">
+          <h3 className="text-sm sm:text-base font-bold shrink-0">{prompt.message}</h3>
+          <p className="text-xs text-stone-500 mt-1 shrink-0">点击选择目标区域内的一张牌</p>
+          <div className="mt-3.5 overflow-y-auto flex-1 min-h-0">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {prompt.choices.map((ch, idx) => (
+                <button
+                  key={`${ch.zone}_${idx}`}
+                  type="button"
+                  onClick={() => onChoosePlayerCard(idx)}
+                  className={[
+                    'min-h-[44px] px-3 py-2.5 rounded-lg text-xs font-semibold border text-left transition-all hover:shadow',
+                    ch.zone === 'hand'
+                      ? 'bg-stone-100 dark:bg-stone-800 border-stone-300 dark:border-stone-600'
+                      : ch.zone === 'judge'
+                        ? 'bg-rose-50 dark:bg-rose-950/50 border-rose-300 dark:border-rose-700 text-rose-800 dark:text-rose-200'
+                        : 'bg-sky-50 dark:bg-sky-950/50 border-sky-300 dark:border-sky-700 text-sky-900 dark:text-sky-200'
+                  ].join(' ')}
+                >
+                  {ch.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -279,10 +281,10 @@ export function ActionModal({
 
   if (prompt.type === 'choose_harvest_card') {
     return (
-      <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[1px] flex items-center justify-center p-4">
-        <div className="max-w-2xl w-full rounded-xl bg-white dark:bg-[#1F232B] border border-stone-300 dark:border-stone-700 shadow-2xl p-5">
-          <h3 className="text-base font-bold">{prompt.message}</h3>
-          <div className="mt-4 flex flex-wrap gap-3 justify-center">
+      <div className="fixed inset-0 z-40 bg-black/45 backdrop-blur-[1px] flex items-end sm:items-center justify-center p-3 sm:p-4">
+        <div className="max-w-2xl w-full max-h-[88dvh] overflow-y-auto rounded-xl bg-white dark:bg-[#1F232B] border border-stone-300 dark:border-stone-700 shadow-2xl p-4 sm:p-5 safe-bottom-lg">
+          <h3 className="text-sm sm:text-base font-bold">{prompt.message}</h3>
+          <div className="mt-3.5 flex flex-wrap gap-2 sm:gap-3 justify-center">
             {prompt.pool.map((item) => (
               <CardTile
                 key={item.card.id}
@@ -373,13 +375,13 @@ function GeneralPickerModal({
   };
 
   return (
-    <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-[1px] flex items-center justify-center p-4">
-      <div className="max-w-4xl w-full rounded-xl bg-white dark:bg-[#1F232B] border border-stone-300 dark:border-stone-700 shadow-2xl p-5 flex flex-col max-h-[88vh]">
-        <div className="flex flex-wrap items-center justify-between gap-2">
+    <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-[1px] flex items-end sm:items-center justify-center p-2 sm:p-4">
+      <div className="max-w-4xl w-full rounded-xl bg-white dark:bg-[#1F232B] border border-stone-300 dark:border-stone-700 shadow-2xl p-3 sm:p-5 flex flex-col max-h-[92dvh] sm:max-h-[88vh] safe-bottom">
+        <div className="shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div>
-            <h3 className="text-lg font-bold">{message}</h3>
-            <p className="text-xs text-stone-500 mt-0.5">
-              从候选武将中选择一位出战（共 {filtered.length}/{candidates.length} 位 · 悬停技能查看 OL 原文）
+            <h3 className="text-base sm:text-lg font-bold">{message}</h3>
+            <p className="text-[11px] sm:text-xs text-stone-500 mt-0.5">
+              选择一位武将出战（共 {filtered.length}/{candidates.length} 位）
             </p>
           </div>
           {showFilters && (
@@ -388,14 +390,14 @@ function GeneralPickerModal({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="搜索武将 / 技能名..."
-              className="px-3 py-1.5 rounded-lg text-xs border border-stone-300 dark:border-stone-600 bg-stone-50 dark:bg-stone-900 outline-none focus:ring-2 focus:ring-amber-500/60 w-48"
+              className="px-3 py-2 sm:py-1.5 rounded-lg text-base sm:text-xs border border-stone-300 dark:border-stone-600 bg-stone-50 dark:bg-stone-900 outline-none focus:ring-2 focus:ring-amber-500/60 w-full sm:w-52"
             />
           )}
         </div>
 
         {showFilters && (
-          <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
-            <div className="flex items-center gap-1">
+          <div className="shrink-0 mt-2.5 flex flex-wrap items-center gap-1.5 sm:gap-2 text-[11px]">
+            <div className="flex flex-wrap items-center gap-1">
               {(
                 [
                   ['all', '全势力'],
@@ -410,7 +412,7 @@ function GeneralPickerModal({
                   type="button"
                   onClick={() => setFactionFilter(key)}
                   className={[
-                    'px-2 py-1 rounded font-semibold border transition-colors',
+                    'px-2.5 py-1.5 sm:px-2 sm:py-1 rounded font-semibold border transition-colors',
                     factionFilter === key
                       ? 'bg-stone-900 text-white border-stone-900 dark:bg-amber-600 dark:border-amber-600'
                       : 'bg-stone-50 dark:bg-stone-800 text-stone-600 dark:text-stone-300 border-stone-200 dark:border-stone-700 hover:bg-stone-100'
@@ -420,11 +422,11 @@ function GeneralPickerModal({
                 </button>
               ))}
             </div>
-            <span className="text-stone-300 dark:text-stone-700">|</span>
-            <div className="flex items-center gap-1">
+            <span className="hidden sm:inline text-stone-300 dark:text-stone-700">|</span>
+            <div className="flex flex-wrap items-center gap-1">
               {(
                 [
-                  ['all', '全扩展包'],
+                  ['all', '全包'],
                   ['standard', '标准 27'],
                   ['limit_break', '界限 30'],
                   ['expansion', '风林火山 32']
@@ -435,7 +437,7 @@ function GeneralPickerModal({
                   type="button"
                   onClick={() => setPackFilter(key)}
                   className={[
-                    'px-2 py-1 rounded font-semibold border transition-colors',
+                    'px-2.5 py-1.5 sm:px-2 sm:py-1 rounded font-semibold border transition-colors',
                     packFilter === key
                       ? 'bg-[#8B2626] text-white border-[#8B2626]'
                       : 'bg-stone-50 dark:bg-stone-800 text-stone-600 dark:text-stone-300 border-stone-200 dark:border-stone-700 hover:bg-stone-100'
@@ -448,7 +450,8 @@ function GeneralPickerModal({
           </div>
         )}
 
-        <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 overflow-y-auto pr-1 flex-1">
+        <div className="mt-3 sm:mt-4 overflow-y-auto pr-0.5 flex-1 min-h-0">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 sm:gap-3">
           {filtered.map((g) => {
             const fm = FACTION_META[g.faction];
             const pb = packBadgeLabel(g.pack);
@@ -457,13 +460,13 @@ function GeneralPickerModal({
                 key={g.id}
                 type="button"
                 onClick={() => onChooseGeneral(g.id)}
-                className="text-left rounded-xl border border-stone-300 dark:border-stone-600 bg-stone-50 dark:bg-stone-900 hover:border-stone-900 dark:hover:border-amber-400 hover:shadow-md transition-all overflow-hidden flex flex-col"
+                className="text-left rounded-xl border border-stone-300 dark:border-stone-600 bg-stone-50 dark:bg-stone-900 hover:border-stone-900 dark:hover:border-amber-400 hover:shadow-md active:scale-[0.99] transition-all overflow-hidden flex flex-col"
               >
                 <div className={`h-1.5 w-full ${fm.bar}`} />
-                <div className="p-3 flex flex-col gap-1 flex-1">
-                  <div className="flex items-center justify-between">
+                <div className="p-2 sm:p-3 flex flex-col gap-1 flex-1">
+                  <div className="flex items-center justify-between gap-1">
                     <div className="flex items-center gap-1">
-                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${fm.badge}`}>
+                      <span className={`px-1 sm:px-1.5 py-0.5 rounded text-[10px] font-bold ${fm.badge}`}>
                         {fm.label}
                       </span>
                       {pb && (
@@ -472,16 +475,16 @@ function GeneralPickerModal({
                         </span>
                       )}
                     </div>
-                    <span className="font-mono text-xs text-stone-500">
-                      {g.maxHp} 血 · {g.gender === 'male' ? '男' : '女'}
+                    <span className="font-mono text-[11px] sm:text-xs text-stone-500 whitespace-nowrap">
+                      {g.maxHp}血·{g.gender === 'male' ? '男' : '女'}
                     </span>
                   </div>
-                  <div className="font-serif font-bold text-base mt-0.5">{g.name}</div>
-                  <div className="text-[11px] text-stone-500">{g.title}</div>
+                  <div className="font-serif font-bold text-sm sm:text-base mt-0.5">{g.name}</div>
+                  <div className="text-[10px] sm:text-[11px] text-stone-500">{g.title}</div>
                   {g.skills.length === 0 ? (
                     <div className="text-[11px] text-stone-400 mt-1">无技能（标准测试将）</div>
                   ) : (
-                    <div className="mt-1.5 flex flex-col gap-1">
+                    <div className="mt-1 sm:mt-1.5 flex flex-col gap-1">
                       {g.skills.map((s) => (
                         <div
                           key={s.id}
@@ -513,6 +516,7 @@ function GeneralPickerModal({
               未找到匹配的武将，请调整筛选条件
             </div>
           )}
+          </div>
         </div>
       </div>
     </div>

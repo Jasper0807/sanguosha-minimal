@@ -7,11 +7,19 @@ import { SummaryView } from './views/SummaryView';
 import { OnlineRoomView } from './views/OnlineRoomView';
 import { OnlineGameTableView } from './views/OnlineGameTableView';
 import { CardDetailModal } from './components/CardDetailModal';
+import { SkillDetailModal } from './components/SkillDetailModal';
 import { RulesModal } from './components/RulesModal';
 
 export default function App() {
-  const { screen, inspectCard, showRulesModal, setInspectCard, setShowRulesModal } =
-    useGameStore();
+  const {
+    screen,
+    inspectCard,
+    inspectSkill,
+    showRulesModal,
+    setInspectCard,
+    setInspectSkill,
+    setShowRulesModal
+  } = useGameStore();
   const { room, nickname, joinRoom } = useOnlineStore();
   const [initialRoomCode, setInitialRoomCode] = useState<string | null>(null);
 
@@ -55,6 +63,7 @@ export default function App() {
       )}
 
       <CardDetailModal card={inspectCard} onClose={() => setInspectCard(null)} />
+      <SkillDetailModal skill={inspectSkill} onClose={() => setInspectSkill(null)} />
       <RulesModal open={showRulesModal} onClose={() => setShowRulesModal(false)} />
     </>
   );

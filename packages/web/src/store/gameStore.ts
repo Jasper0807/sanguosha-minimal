@@ -14,6 +14,8 @@ import {
   type SeatConfig
 } from '@sgs/engine';
 
+import type { InspectedSkill } from '../components/SkillDetailModal';
+
 export type ScreenMode = 'lobby' | 'table' | 'summary';
 export type AISpeed = 'instant' | 'fast' | 'normal' | 'slow';
 export type AIDecider = (engine: GameEngine, playerId: string) => PlayerResponse;
@@ -52,6 +54,7 @@ interface GameStoreState {
 
   // UI overlays
   inspectCard: CardInstance | null;
+  inspectSkill: InspectedSkill | null;
   showRulesModal: boolean;
   showLogDrawer: boolean;
 
@@ -99,6 +102,7 @@ interface GameStoreState {
 
   // Overlays
   setInspectCard: (card: CardInstance | null) => void;
+  setInspectSkill: (skill: InspectedSkill | null) => void;
   setShowRulesModal: (open: boolean) => void;
   setShowLogDrawer: (open: boolean) => void;
   exportReplayJson: () => string;
@@ -194,8 +198,9 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   skipSimilarNullification: false,
 
   inspectCard: null,
+  inspectSkill: null,
   showRulesModal: false,
-  showLogDrawer: true,
+  showLogDrawer: typeof window !== 'undefined' ? window.innerWidth >= 1024 : true,
   aiDecider: decideAIAction,
 
   toggleTheme: () => {
@@ -884,6 +889,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   },
 
   setInspectCard: (inspectCard) => set({ inspectCard }),
+  setInspectSkill: (inspectSkill) => set({ inspectSkill }),
   setShowRulesModal: (showRulesModal) => set({ showRulesModal }),
   setShowLogDrawer: (showLogDrawer) => set({ showLogDrawer }),
 

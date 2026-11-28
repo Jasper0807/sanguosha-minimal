@@ -126,32 +126,33 @@ export function LobbyView({
   };
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-dvh-screen flex flex-col">
       {/* Top Header */}
-      <header className="border-b border-stone-300 dark:border-stone-800 bg-white/85 dark:bg-[#1B1E24]/90 backdrop-blur px-6 py-3.5">
-        <div className="max-w-5xl mx-auto flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-[#8B2626] text-white flex items-center justify-center font-serif font-bold text-lg shadow-sm">
+      <header className="border-b border-stone-300 dark:border-stone-800 bg-white/90 dark:bg-[#1B1E24]/95 backdrop-blur px-3 sm:px-6 py-2.5 sm:py-3.5">
+        <div className="max-w-5xl mx-auto flex flex-wrap items-center justify-between gap-2.5 sm:gap-4">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-[#8B2626] text-white flex items-center justify-center font-serif font-bold text-base sm:text-lg shadow-sm shrink-0">
               杀
             </div>
-            <div>
-              <h1 className="font-serif font-bold text-lg tracking-tight leading-tight">
-                极简三国杀 · Minimal Sanguosha
+            <div className="min-w-0">
+              <h1 className="font-serif font-bold text-base sm:text-lg tracking-tight leading-tight truncate">
+                极简三国杀
+                <span className="hidden sm:inline"> · Minimal Sanguosha</span>
               </h1>
-              <p className="text-xs text-stone-500 dark:text-stone-400">
+              <p className="hidden sm:block text-xs text-stone-500 dark:text-stone-400">
                 纯文本几何极简牌桌 · 严格对齐三国杀 OL 规则
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 w-full sm:w-auto justify-between sm:justify-end">
             {/* Local vs Online Mode Switcher */}
-            <div className="inline-flex rounded-lg border border-stone-300 dark:border-stone-700 p-0.5 bg-stone-100 dark:bg-stone-900">
+            <div className="inline-flex flex-1 sm:flex-none rounded-lg border border-stone-300 dark:border-stone-700 p-0.5 bg-stone-100 dark:bg-stone-900">
               <button
                 type="button"
                 onClick={() => setLobbyTab('local')}
                 className={[
-                  'inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-bold transition-colors',
+                  'flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-1 rounded-md text-xs font-bold transition-colors',
                   lobbyTab === 'local'
                     ? 'bg-white dark:bg-stone-700 text-stone-900 dark:text-white shadow-sm'
                     : 'text-stone-500 hover:text-stone-800 dark:hover:text-stone-200'
@@ -164,7 +165,7 @@ export function LobbyView({
                 type="button"
                 onClick={() => setLobbyTab('online')}
                 className={[
-                  'inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-bold transition-colors',
+                  'flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-1 rounded-md text-xs font-bold transition-colors',
                   lobbyTab === 'online'
                     ? 'bg-[#8B2626] text-white shadow-sm'
                     : 'text-stone-500 hover:text-stone-800 dark:hover:text-stone-200'
@@ -175,40 +176,45 @@ export function LobbyView({
               </button>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setShowRulesModal(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 hover:bg-stone-100 dark:hover:bg-stone-700 transition-colors"
-            >
-              <BookOpen className="w-3.5 h-3.5" />
-              规则速查
-            </button>
-            <button
-              type="button"
-              onClick={toggleTheme}
-              title="切换浅色/深色主题"
-              className="p-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 hover:bg-stone-100 dark:hover:bg-stone-700 transition-colors"
-            >
-              {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
-            </button>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowRulesModal(true)}
+                aria-label="规则速查"
+                className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 hover:bg-stone-100 dark:hover:bg-stone-700 transition-colors"
+              >
+                <BookOpen className="w-3.5 h-3.5" />
+                <span className="hidden xs:inline sm:inline">规则</span>
+                <span className="hidden sm:inline">速查</span>
+              </button>
+              <button
+                type="button"
+                onClick={toggleTheme}
+                title="切换浅色/深色主题"
+                aria-label="切换主题"
+                className="p-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 hover:bg-stone-100 dark:hover:bg-stone-700 transition-colors"
+              >
+                {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+              </button>
+            </div>
           </div>
         </div>
       </header>
 
       {/* Online PvP Entry View */}
       {lobbyTab === 'online' ? (
-        <main className="flex-1 max-w-4xl w-full mx-auto px-6 py-8 space-y-6">
+        <main className="flex-1 max-w-4xl w-full mx-auto px-3 sm:px-6 py-4 sm:py-8 space-y-4 sm:space-y-6 safe-bottom-lg">
           {onlineError && (
             <div className="rounded-xl px-4 py-3 text-xs font-medium bg-rose-50 dark:bg-rose-950/60 border border-rose-300 dark:border-rose-700 text-rose-800 dark:text-rose-200 flex items-center justify-between">
               <span>{onlineError}</span>
-              <button type="button" onClick={clearError} className="underline ml-3">
+              <button type="button" onClick={clearError} className="underline ml-3 shrink-0">
                 关闭
               </button>
             </div>
           )}
 
           {/* Nickname Bar */}
-          <section className="rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-[#1E2128] p-5 shadow-sm">
+          <section className="rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-[#1E2128] p-4 sm:p-5 shadow-sm">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <h2 className="text-sm font-bold flex flex-wrap items-center gap-1.5">
@@ -235,30 +241,34 @@ export function LobbyView({
                     : '服务端权威防作弊 · 自动隔离手牌与身份 · 断线 30 秒保留座位并支持无缝重连'}
                 </p>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <label className="text-xs text-stone-500 font-medium">你的昵称</label>
+              <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
+                <label className="text-xs text-stone-500 font-medium shrink-0">你的昵称</label>
                 <input
                   type="text"
                   maxLength={16}
                   value={nickname}
                   onChange={(e) => setNickname(e.target.value)}
                   placeholder="输入昵称"
-                  className="w-40 px-3 py-1.5 rounded-lg border border-stone-300 dark:border-stone-600 bg-stone-50 dark:bg-stone-900 text-sm font-semibold outline-none focus:border-stone-900 dark:focus:border-amber-400"
+                  className="flex-1 sm:w-40 px-3 py-2 sm:py-1.5 rounded-lg border border-stone-300 dark:border-stone-600 bg-stone-50 dark:bg-stone-900 text-base sm:text-sm font-semibold outline-none focus:border-stone-900 dark:focus:border-amber-400"
                 />
               </div>
             </div>
           </section>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
             {/* Join by Room Code */}
-            <section className="rounded-xl border-2 border-stone-300 dark:border-stone-700 bg-white dark:bg-[#1E2128] p-5 shadow-sm flex flex-col justify-between gap-4">
+            <section className="rounded-xl border-2 border-stone-300 dark:border-stone-700 bg-white dark:bg-[#1E2128] p-4 sm:p-5 shadow-sm flex flex-col justify-between gap-4">
               <div className="space-y-3">
                 <div className="flex items-center gap-2 text-base font-serif font-bold">
                   <LogIn className="w-5 h-5 text-[#1E3A5F] dark:text-sky-400" />
                   <span>加入好友房间</span>
                 </div>
                 <p className="text-xs text-stone-500 leading-relaxed">
-                  输入好友发来的 6 位房间码（或直接打开好友发送的 `?room=XXXXXX` 链接），免注册一键入座；若满员自动进入实时观战席。
+                  输入好友发来的 6 位房间码（或直接打开好友发送的{' '}
+                  <code className="font-mono px-1 py-0.5 rounded bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-200">
+                    ?room=XXXXXX
+                  </code>{' '}
+                  链接），免注册一键入座；若满员自动进入实时观战席。
                 </p>
                 <input
                   type="text"
@@ -284,7 +294,7 @@ export function LobbyView({
             </section>
 
             {/* Create New Room */}
-            <section className="rounded-xl border-2 border-stone-900/80 dark:border-amber-500/70 bg-white dark:bg-[#1E2128] p-5 shadow-sm flex flex-col justify-between gap-4">
+            <section className="rounded-xl border-2 border-stone-900/80 dark:border-amber-500/70 bg-white dark:bg-[#1E2128] p-4 sm:p-5 shadow-sm flex flex-col justify-between gap-4">
               <div className="space-y-3">
                 <div className="flex items-center gap-2 text-base font-serif font-bold">
                   <PlusCircle className="w-5 h-5 text-[#8B2626] dark:text-amber-400" />
@@ -301,7 +311,7 @@ export function LobbyView({
                       type="button"
                       onClick={() => setMode(m)}
                       className={[
-                        'py-1.5 rounded-lg text-xs font-bold border transition-colors',
+                        'py-2 sm:py-1.5 rounded-lg text-xs font-bold border transition-colors',
                         mode === m
                           ? 'bg-stone-900 text-white border-stone-900 dark:bg-amber-600 dark:border-amber-600'
                           : 'border-stone-300 dark:border-stone-700'
@@ -316,7 +326,7 @@ export function LobbyView({
                   <select
                     value={deckVariant}
                     onChange={(e) => setDeckVariant(e.target.value as DeckVariant)}
-                    className="px-2.5 py-1.5 rounded-lg border border-stone-300 dark:border-stone-700 bg-stone-50 dark:bg-stone-900"
+                    className="px-2.5 py-2 sm:py-1.5 rounded-lg border border-stone-300 dark:border-stone-700 bg-stone-50 dark:bg-stone-900"
                   >
                     <option value="junzheng_161">军争篇 161张</option>
                     <option value="standard_ex">标准+EX 108张</option>
@@ -328,7 +338,7 @@ export function LobbyView({
                         e.target.value as 'standard' | 'limit_break' | 'expansion' | 'all' | 'blank'
                       )
                     }
-                    className="px-2.5 py-1.5 rounded-lg border border-stone-300 dark:border-stone-700 bg-stone-50 dark:bg-stone-900"
+                    className="px-2.5 py-2 sm:py-1.5 rounded-lg border border-stone-300 dark:border-stone-700 bg-stone-50 dark:bg-stone-900"
                   >
                     <option value="all">全武将池 89将</option>
                     <option value="expansion">风林火山 32将</option>
@@ -352,7 +362,7 @@ export function LobbyView({
         </main>
       ) : (
         /* Main Local Content */
-        <main className="flex-1 max-w-5xl w-full mx-auto px-6 py-8 grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <main className="flex-1 max-w-5xl w-full mx-auto px-3 sm:px-6 py-4 sm:py-8 grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6 safe-bottom-lg">
           {/* Left Column: Mode + Deck + General Pack + Seats */}
           <div className="lg:col-span-7 space-y-6">
             {/* Mode Picker */}
@@ -550,21 +560,21 @@ export function LobbyView({
               {seats.map((seat, idx) => (
                 <div
                   key={idx}
-                  className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg border border-stone-200 dark:border-stone-700 bg-stone-50/70 dark:bg-stone-900/50"
+                  className="flex flex-wrap items-center justify-between gap-2 sm:gap-3 px-3 py-2 rounded-lg border border-stone-200 dark:border-stone-700 bg-stone-50/70 dark:bg-stone-900/50"
                 >
-                  <div className="flex items-center gap-2.5 flex-1 min-w-0">
-                    <span className="font-mono text-xs font-bold w-8 text-stone-500">
+                  <div className="flex items-center gap-2 flex-1 min-w-[160px]">
+                    <span className="font-mono text-xs font-bold w-7 text-stone-500 shrink-0">
                       #{idx + 1}
                     </span>
                     <input
                       type="text"
                       value={seat.name}
                       onChange={(e) => updateSeat(idx, { name: e.target.value })}
-                      className="bg-transparent border-b border-transparent focus:border-stone-400 outline-none text-sm font-medium flex-1 min-w-0"
+                      className="bg-transparent border-b border-transparent focus:border-stone-400 outline-none text-base sm:text-sm font-medium flex-1 min-w-0"
                     />
                     {mode === '2v2' && (
                       <span
-                        className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                        className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${
                           idx === 0 || idx === 3
                             ? 'bg-[#1E3A5F] text-white'
                             : 'bg-[#8B2626] text-white'
@@ -573,6 +583,9 @@ export function LobbyView({
                         {idx === 0 || idx === 3 ? '蓝队' : '红队'}
                       </span>
                     )}
+                  </div>
+
+                  <div className="flex items-center gap-1.5 shrink-0">
                     {mode === 'identity5' && (
                       <select
                         value={seat.preferredRole ?? ''}
@@ -582,7 +595,7 @@ export function LobbyView({
                           })
                         }
                         title="调试指定身份（留空则随机）"
-                        className="text-[11px] rounded border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-800 px-1.5 py-0.5"
+                        className="text-[11px] rounded border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-800 px-1.5 py-1"
                       >
                         <option value="">随机身份</option>
                         <option value="lord">主公</option>
@@ -591,30 +604,30 @@ export function LobbyView({
                         <option value="renegade">内奸</option>
                       </select>
                     )}
-                  </div>
 
-                  <button
-                    type="button"
-                    onClick={() => updateSeat(idx, { isAI: !seat.isAI })}
-                    className={[
-                      'inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold border transition-colors shrink-0',
-                      seat.isAI
-                        ? 'bg-sky-50 dark:bg-sky-950/60 text-sky-800 dark:text-sky-200 border-sky-300 dark:border-sky-700'
-                        : 'bg-white dark:bg-stone-800 text-stone-800 dark:text-stone-200 border-stone-300 dark:border-stone-600'
-                    ].join(' ')}
-                  >
-                    {seat.isAI ? (
-                      <>
-                        <Bot className="w-3.5 h-3.5" />
-                        AI 机器人
-                      </>
-                    ) : (
-                      <>
-                        <User className="w-3.5 h-3.5" />
-                        真人玩家
-                      </>
-                    )}
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => updateSeat(idx, { isAI: !seat.isAI })}
+                      className={[
+                        'inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-md text-xs font-semibold border transition-colors shrink-0',
+                        seat.isAI
+                          ? 'bg-sky-50 dark:bg-sky-950/60 text-sky-800 dark:text-sky-200 border-sky-300 dark:border-sky-700'
+                          : 'bg-white dark:bg-stone-800 text-stone-800 dark:text-stone-200 border-stone-300 dark:border-stone-600'
+                      ].join(' ')}
+                    >
+                      {seat.isAI ? (
+                        <>
+                          <Bot className="w-3.5 h-3.5" />
+                          AI 机器人
+                        </>
+                      ) : (
+                        <>
+                          <User className="w-3.5 h-3.5" />
+                          真人玩家
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

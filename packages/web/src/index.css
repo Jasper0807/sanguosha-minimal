@@ -6,6 +6,41 @@
   html,
   body,
   #root {
-    height: 100%;
+    min-height: 100%;
+    min-height: 100dvh;
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  button,
+  [role='button'],
+  select,
+  input {
+    touch-action: manipulation;
+  }
+}
+
+@layer utilities {
+  .h-dvh-screen {
+    height: 100vh;
+    height: 100dvh;
+  }
+
+  .min-h-dvh-screen {
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+
+  .safe-bottom {
+    padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+  }
+
+  .safe-bottom-lg {
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  }
+
+  .touch-scroll-x {
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
   }
 }

@@ -13,29 +13,30 @@ export function CardDetailModal({ card, onClose }: CardDetailModalProps) {
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 bg-black/45 backdrop-blur-[1px] flex items-end sm:items-center justify-center p-3 sm:p-4"
       onClick={onClose}
     >
       <div
-        className="max-w-md w-full rounded-xl bg-white dark:bg-[#1F232B] border border-stone-300 dark:border-stone-700 shadow-2xl p-5"
+        className="max-w-md w-full rounded-xl bg-white dark:bg-[#1F232B] border border-stone-300 dark:border-stone-700 shadow-2xl p-4 sm:p-5 safe-bottom-lg"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 min-w-0">
             <span
-              className={`font-mono text-lg font-bold ${
+              className={`font-mono text-lg font-bold shrink-0 ${
                 isRed ? 'text-red-600' : 'text-stone-900 dark:text-stone-100'
               }`}
             >
               {getSuitSymbol(card.suit)}
               {getRankLabel(card.rank)}
             </span>
-            <h3 className="font-serif text-xl font-bold">【{card.displayName}】</h3>
+            <h3 className="font-serif text-lg sm:text-xl font-bold truncate">【{card.displayName}】</h3>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-1 rounded hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-400"
+            aria-label="关闭牌面说明"
+            className="p-1.5 rounded-lg hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-400 shrink-0"
           >
             <X className="w-4 h-4" />
           </button>
@@ -55,15 +56,15 @@ export function CardDetailModal({ card, onClose }: CardDetailModalProps) {
           )}
         </div>
 
-        <p className="mt-4 text-sm leading-relaxed text-stone-700 dark:text-stone-300">
+        <p className="mt-3.5 text-sm leading-relaxed text-stone-700 dark:text-stone-300">
           {card.description}
         </p>
 
-        <div className="mt-5 flex justify-end">
+        <div className="mt-4 flex justify-end">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-stone-900 text-white dark:bg-stone-200 dark:text-stone-900"
+            className="px-4 py-2 rounded-lg text-xs font-semibold bg-stone-900 text-white dark:bg-stone-200 dark:text-stone-900"
           >
             关闭
           </button>

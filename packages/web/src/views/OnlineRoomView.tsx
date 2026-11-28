@@ -84,42 +84,43 @@ export function OnlineRoomView() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-dvh-screen flex flex-col">
       {/* Header */}
-      <header className="border-b border-stone-300 dark:border-stone-800 bg-white/90 dark:bg-[#1B1E24]/95 px-5 py-3">
-        <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
+      <header className="border-b border-stone-300 dark:border-stone-800 bg-white/95 dark:bg-[#1B1E24]/95 px-3 sm:px-5 py-2.5 sm:py-3">
+        <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-2 sm:gap-3">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             <button
               type="button"
               onClick={leaveRoom}
               className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-stone-300 dark:border-stone-700 hover:bg-stone-100 dark:hover:bg-stone-800"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
-              离开房间
+              离开
+              <span className="hidden sm:inline">房间</span>
             </button>
 
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-stone-500">房间号</span>
-              <span className="font-mono font-bold text-base tracking-widest px-2.5 py-0.5 rounded-md bg-stone-900 text-white dark:bg-amber-600">
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <span className="hidden sm:inline text-xs text-stone-500">房间号</span>
+              <span className="font-mono font-bold text-sm sm:text-base tracking-widest px-2 sm:px-2.5 py-0.5 rounded-md bg-stone-900 text-white dark:bg-amber-600">
                 {room.roomCode}
               </span>
               <button
                 type="button"
                 onClick={handleCopyInvite}
                 className={[
-                  'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors',
+                  'inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold transition-colors',
                   copied
                     ? 'bg-emerald-600 text-white'
                     : 'bg-[#8B2626] hover:bg-[#731F1F] text-white'
                 ].join(' ')}
               >
                 {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                {copied ? '已复制邀请链接！' : '复制好友邀请链接'}
+                {copied ? '已复制！' : '复制邀请链接'}
               </button>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <span
               className={[
                 'inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold',
@@ -136,9 +137,9 @@ export function OnlineRoomView() {
               {status === 'connected'
                 ? isP2P
                   ? isP2PHost
-                    ? 'P2P 房主已就绪'
-                    : 'P2P 已联机'
-                  : '权威服务端已联机'
+                    ? 'P2P 房主'
+                    : 'P2P 已连'
+                  : '权威服务端'
                 : '重连中...'}
             </span>
 
@@ -147,6 +148,7 @@ export function OnlineRoomView() {
               onClick={() => setShowRulesModal(true)}
               className="p-2 rounded-lg border border-stone-300 dark:border-stone-700 hover:bg-stone-100 dark:hover:bg-stone-800"
               title="规则速查"
+              aria-label="规则速查"
             >
               <BookOpen className="w-4 h-4" />
             </button>
@@ -155,6 +157,7 @@ export function OnlineRoomView() {
               onClick={toggleTheme}
               className="p-2 rounded-lg border border-stone-300 dark:border-stone-700 hover:bg-stone-100 dark:hover:bg-stone-800"
               title="切换浅/深色主题"
+              aria-label="切换主题"
             >
               {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
             </button>
@@ -164,8 +167,8 @@ export function OnlineRoomView() {
 
       {/* P2P Host Reminder */}
       {isP2PHost && (
-        <div className="max-w-6xl w-full mx-auto px-5 pt-3">
-          <div className="rounded-lg px-4 py-2 text-xs font-medium bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200">
+        <div className="max-w-6xl w-full mx-auto px-3 sm:px-5 pt-2.5 sm:pt-3">
+          <div className="rounded-lg px-3 sm:px-4 py-2 text-xs font-medium bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200">
             当前为 <strong>WebRTC P2P 免服务器联机</strong>：你是房主，好友将通过邀请链接直连你的浏览器。对局期间请勿关闭当前标签页。
           </div>
         </div>
@@ -173,10 +176,10 @@ export function OnlineRoomView() {
 
       {/* Alerts */}
       {(errorMessage || infoNotice) && (
-        <div className="max-w-6xl w-full mx-auto px-5 pt-4">
-          <div className="rounded-lg px-4 py-2.5 text-xs font-medium bg-rose-50 dark:bg-rose-950/60 border border-rose-300 dark:border-rose-700 text-rose-800 dark:text-rose-200 flex items-center justify-between">
+        <div className="max-w-6xl w-full mx-auto px-3 sm:px-5 pt-3 sm:pt-4">
+          <div className="rounded-lg px-3.5 sm:px-4 py-2.5 text-xs font-medium bg-rose-50 dark:bg-rose-950/60 border border-rose-300 dark:border-rose-700 text-rose-800 dark:text-rose-200 flex items-center justify-between">
             <span>{errorMessage || infoNotice}</span>
-            <button type="button" onClick={clearError} className="underline ml-3">
+            <button type="button" onClick={clearError} className="underline ml-3 shrink-0">
               关闭
             </button>
           </div>
@@ -184,23 +187,25 @@ export function OnlineRoomView() {
       )}
 
       {/* Main Layout */}
-      <main className="flex-1 max-w-6xl w-full mx-auto px-5 py-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <main className="flex-1 max-w-6xl w-full mx-auto px-3 sm:px-5 py-4 sm:py-6 grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6 safe-bottom-lg">
         {/* Left 7 cols: Seats + Spectators + Config */}
-        <div className="lg:col-span-7 space-y-5">
+        <div className="lg:col-span-7 space-y-4 sm:space-y-5">
           {/* Invite Link Box */}
-          <section className="rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-[#1E2128] p-4 flex flex-wrap items-center justify-between gap-2">
-            <div className="min-w-0">
+          <section className="rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-[#1E2128] p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+            <div className="min-w-0 flex-1">
               <div className="text-xs font-bold text-stone-700 dark:text-stone-200">
                 免注册邀请链接（发给好友打开即可直接入座）
               </div>
-              <div className="font-mono text-xs text-stone-500 truncate mt-0.5">{inviteUrl}</div>
+              <div className="font-mono text-[11px] sm:text-xs text-stone-500 break-all sm:truncate mt-0.5">
+                {inviteUrl}
+              </div>
             </div>
             <button
               type="button"
               onClick={handleCopyInvite}
-              className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-stone-300 dark:border-stone-600 hover:bg-stone-100 dark:hover:bg-stone-800 shrink-0"
+              className="w-full sm:w-auto px-3 py-2 sm:py-1.5 rounded-lg text-xs font-semibold border border-stone-300 dark:border-stone-600 hover:bg-stone-100 dark:hover:bg-stone-800 shrink-0"
             >
-              {copied ? '已复制' : '复制链接'}
+              {copied ? '已复制链接' : '复制链接'}
             </button>
           </section>
 
@@ -390,8 +395,8 @@ export function OnlineRoomView() {
           </section>
 
           {/* Room Rules & Host Timer Config */}
-          <section className="rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-[#1E2128] p-5 shadow-sm space-y-4">
-            <div className="flex items-center justify-between">
+          <section className="rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-[#1E2128] p-4 sm:p-5 shadow-sm space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-1">
               <h2 className="text-sm font-bold">
                 对局规则配置{isHost ? '（房主可调）' : '（由房主配置）'}
               </h2>
